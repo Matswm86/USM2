@@ -1,0 +1,33 @@
+# ---- Copyright boundary: original game + derived assets stay OUT of git ----
+# This repo is open-source CODE only. The original Ultimate Soccer Manager 2
+# files and anything decoded from them (database, artwork) are Impressions/
+# Sierra copyright and must NOT be redistributed. Provide your own copy.
+original/
+decoded/
+*.PIC
+*.DAT
+*.SVE
+*.PHS
+*.MCH
+*.THS
+
+# ---- Android / Gradle ----
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/captures/
+*.apk
+*.aab
+*.keystore
+
+# ---- Python ----
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ---- OS / editor ----
+.DS_Store
+*.swp
