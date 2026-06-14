@@ -20,14 +20,21 @@ usm2/
 └── android/    # Kotlin/Compose app (built via GitHub Actions CI)
 ```
 
-## Scope / rollout
-The original game files contain three databases: **England, France, Germany**.
-- **v1: England** — full pyramid (Premier League + lower divisions), playable
-  first.
-- **v2: top tiers** of the other originals — French Ligue 1 + German Bundesliga
-  (top-division clubs, division byte `0`).
-- Leagues not in the original files (Italy, Spain, …) would need non-original
-  data and are out of scope unless a licensed/community dataset is supplied.
+## Scope / world model
+The original game files contain three databases: **England, France, Germany**
+(636 clubs, ~11.8k players). All three are loaded into the game world; only the
+English seat is player-controlled.
+
+- **Playable**: the **English** pyramid only (manage an English club; Premier
+  League [division byte `0`, 20 clubs] down through the lower divisions).
+- **Full database loaded**: France + Germany clubs and players exist in-world
+  so you can:
+  - **buy players from other leagues** (transfer market spans all DBs + the
+    foreign "Euro" player pool), and
+  - **play European competition** — your English club is drawn against
+    continental clubs (French/German top tiers).
+- Leagues not in the original files (Italy, Spain, …) need non-original data and
+  are out of scope unless a licensed/community dataset is supplied.
 
 ## Build phases (tracked in the session task list)
 1. **Decode assets** — DB ✅ (636 teams / ~11.8k players → JSON); graphics 🟡
