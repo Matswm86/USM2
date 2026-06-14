@@ -39,16 +39,33 @@ Seedorf, Cocu, Reiziger, Bergkamp, Zidane, Batistuta, Maldini, Raúl); only 28 o
 4288 records in PLAYERN are placeholders.
 
 ### PLAYER{F,G,N}.DAT — 144-byte records
-| offset | size | field |
-|--------|------|-------|
-| 0   | 14 | first name |
-| 14  | 14 | surname |
-| 28  | ~0x4F | flags / position / club ref (`mid_raw`) |
-| 0x77 | tail | skill cluster, values 0–100 (`skills_raw`) |
+Field offsets recovered by per-column profiling over 4260 English players:
+| offset | field |
+|--------|-------|
+| 0   | first name (14, CP850) |
+| 14  | surname (14, CP850) |
+| 28  | age (17–41) |
+| 29  | byte, 0–54 (caps/apps? TBD) |
+| 32–35 | club ref / value bytes (TBD; 34–35 = 0xFF sentinel) |
+| 33  | key-player flag (0xFF ≈ 6.3% of players; a star flag, NOT position) |
+| 123–133 | skill block, values ~0–99; byte **128 = constant 100** (normaliser) |
+| 30–122, 134–143 | zero/0xFF in seed DB (in-game runtime state) |
 
-Counts: French 3379, German 4150, Dutch 4288 players (~99% real names).
-Skill-column semantics (tackling/passing/shooting/pace/stamina/handling/…)
-still being mapped by cross-referencing known players — 🟡.
+Counts: French 3379, German 4150, English 4288 players (~99% real names),
+emitted with `age`, `key_player`, `skills` (11-byte list). 🟡 Exact per-column
+attribute names (tackle / pass / shoot / head / pace / stamina / handle / …) are
+still TBD — derive from the player-screen display code in USM2E.EXE (the labels
+sit next to the bytes there). The flag-vs-skill correlation did NOT isolate GKs,
+so do not guess names from it.
+
+### Auxiliary resources — DECODED (`tools/decode_misc.py` → `decoded/*.json`)
+- GAME.TXT: u32 offset table (offset[0]=table size) + CP850 strings →
+  **1288 entries** (1287 non-empty) = match-report/commentary templates with
+  `^t` team-name placeholders.
+- ADVERT.DAT: **100** advertising-hoarding names.
+- COACH.DAT: **195** staff names (`Page` section marker + name/attr records).
+- FORM.DAT / *.FOR: formations (e.g. "4 1 5" style descriptors) — structure
+  noted, full decode pending (needed only for tactics UI).
 
 ### Other data files — 🔴 to decode
 COACH.DAT (4680), FORM.DAT (8712, formations), ADVERT.DAT (6200),
@@ -103,13 +120,24 @@ all; MAINSCR/BANKSCR look correct, but TITLE's globe has colour speckle that may
 mean some screens use a different one of the 8 palette sets (the game switches
 palettes at load). Refine by testing palette index 0–7 per screen.
 
-## 🔴 Other graphics
-- ALL.PAL — 6144 bytes = 8 × 256-colour palettes (0–63 VGA), shared palettes.
-- *.BIT — fonts (TITLEFNT, BIGFONT, NEWFONT, SMALLFNT…) + sheets (STADIUM 1.9M,
-  GISTAD, SHOP, TOOLS, GROUND, MANAGERS).
-- *.SPR — sprites (PITCH.SPR match sprites, POINTER.SPR cursor).
-- *.ANM — animations (CHAIRMAN, MANAICON, BANKICON, BENCHICN).
-- ANIMS/*.SMK — Smacker video stubs (500 bytes each = placeholders here).
+## 🟡 Sprites / fonts / animations — decompression SOLVED, frame-slice deferred
+Most are **PAK2** (verified: bytes 4–7 = file size BE), so `decode_pic.py`'s
+decompressor produces their raw blobs directly:
+- *.SPR — PITCH.SPR (match sprites, blob 710568), POINTER.SPR (cursor, 4864).
+- *.ANM — CHAIRMAN / MANAICON / BANKICON / BENCHICN (blobs 142k–331k).
+- *.BIT PAK2 — TOOLS (icons, blob 59160), SHOP, GROUND, BIGFONT, SMALLFNT,
+  SMALLFN2, TEXTFONT.
+These are multi-frame **sheets**; per-frame width/height live in the game's blit
+code, not the file (exactly as screens were a known 640×480). Decision: slice
+each sheet per-asset during Phase-2 UI work, validating each cut visually — not
+blind, up front.
+
+Different/raw format (header NOT `PAK2`): STADIUM.BIT (1.9M) & GISTAD.BIT start
+`00 00 01 e0` (=480) → likely raw/own header; fonts MANAGERS/NEWFONT/NEWFONT8/
+TITLEFNT start `00 00 00 00`. Decode when needed.
+
+ALL.PAL — 6144 bytes = 8 × 256-colour palettes (6-bit ×4 → 8-bit RGB).
+ANIMS/*.SMK — Smacker video stubs (500 bytes each = placeholders in this build).
 
 ## Audio (lower priority; modern engine can resynthesise)
 *.WAV (crowd/SFX: CHEER, ROAR, JEER, WHIS*, BOOLIT…), MUSIC/MUSIC1.WAV,

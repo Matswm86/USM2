@@ -66,14 +66,20 @@ def decode_players(path: Path) -> list[dict]:
         last = cstr(r[14:28])
         if not first and not last:
             continue
-        # Skill cluster observed starting ~0x77; capture the tail for mapping.
+        # Field offsets recovered by column profiling (see docs/FORMATS.md):
+        #   28 = age; 33 = key-player flag (0xFF); 123-133 = skill block
+        #   (values ~0-99); 128 is a constant 100 (normaliser). Exact per-column
+        #   attribute names (tackle/pass/shoot/handle/pace/...) still TBD from the
+        #   player-screen display code, so skills are kept as an ordered list.
         players.append(
             {
                 "index": i,
                 "first_name": first,
                 "surname": last,
-                "mid_raw": list(r[28:0x77]),
-                "skills_raw": list(r[0x77:]),
+                "age": r[28],
+                "key_player": r[33] == 0xFF,
+                "skills": list(r[123:134]),  # 11 bytes; [5]=byte128 const 100
+                "raw_tail": list(r[28:]),    # full tail preserved for refinement
             }
         )
     return players
