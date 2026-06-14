@@ -88,12 +88,17 @@ def poisson(rng: Rng, lam: float) -> int:
             return k - 1
 
 
-HOME_ADV = 0.35  # expected-goals bump for the home side
+# NOTE: the SHIPPED goal model (Sim.kt) is now the attack/defence split, not this
+# single-strength one: xG = BASE*exp(K*((attack - oppDefence - leagueGap)/SCALE))
+# with BASE=1.10, K=0.8, SCALE=8, HOME_ADV=0.28, leagueGap = mean(attack)-mean(defence)
+# per division. Tuned against the real EPL data to ~2.8 g/match, ~50/22/28 H/D/A,
+# champion high-70s/80s. The single-strength model below remains as the engine's
+# pre-split fallback and still exercises the schedule / standings / determinism.
+HOME_ADV = 0.35  # expected-goals bump for the home side (legacy single-strength)
 
 
 def expected_goals(att: float, deff: float) -> float:
-    """Map a strength differential to an xG. att/deff are 0..99 overall ratings.
-    Base 1.35 goals, scaled by a logistic of the (att-deff) gap."""
+    """Legacy single-strength xG (now the pre-split fallback). att/deff 0..99."""
     gap = (att - deff) / 18.0
     return max(0.05, 1.35 * math.exp(0.45 * gap))
 

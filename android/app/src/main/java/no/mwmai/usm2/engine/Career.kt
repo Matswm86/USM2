@@ -34,6 +34,13 @@ data class Career(
     val seasonSeed: Long,
     val fixtures: List<Fixture>,
     val season: Int = 1,
+    // Attack/defence lines per club (parallel to clubIds), frozen at season start.
+    // Empty on saves made before the attack/defence split -> [playNextRound] then
+    // falls back to the legacy single-strength model.
+    val attackStrengths: List<Double> = emptyList(),
+    val defenceStrengths: List<Double> = emptyList(),
+    /** Division mean(attack) - mean(defence), centres the goals model. */
+    val leagueGap: Double = 0.0,
 ) {
     val totalRounds: Int get() = (fixtures.maxOfOrNull { it.round } ?: -1) + 1
 
@@ -59,9 +66,19 @@ data class Career(
     fun playNextRound(): Career {
         if (seasonComplete) return this
         val round = nextRound
+        val splitReady = attackStrengths.size == clubIds.size && defenceStrengths.size == clubIds.size
         val updated = fixtures.map { f ->
             if (f.round == round && !f.played) {
-                val r = Sim.play(strengths[f.home], strengths[f.away], fixtureSeed(round, f))
+                val seed = fixtureSeed(round, f)
+                val r = if (splitReady) {
+                    Sim.play(
+                        attackStrengths[f.home], defenceStrengths[f.home],
+                        attackStrengths[f.away], defenceStrengths[f.away],
+                        leagueGap, seed,
+                    )
+                } else {
+                    Sim.playOverall(strengths[f.home], strengths[f.away], seed)
+                }
                 f.copy(homeGoals = r[0], awayGoals = r[1])
             } else {
                 f

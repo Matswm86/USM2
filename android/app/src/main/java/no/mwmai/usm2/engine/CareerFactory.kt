@@ -26,7 +26,11 @@ object CareerFactory {
         val division = divisionOf(data, club)
         if (division.size < 2 || division.size > MAX_DIVISION_SIZE) return null
         val clubIds = division.map { it.id }
-        val strengths = clubIds.map { Strength.of(data.squad(it)) }
+        val squads = clubIds.map { data.squad(it) }
+        val strengths = squads.map { Strength.of(it) }
+        val attack = squads.map { Strength.attack(it) }
+        val defence = squads.map { Strength.defence(it) }
+        val leagueGap = attack.average() - defence.average()
         val fixtures = Schedule.season(clubIds.size, seed)
         return Career(
             managedClubId = clubId,
@@ -37,6 +41,9 @@ object CareerFactory {
             strengths = strengths,
             seasonSeed = seed,
             fixtures = fixtures,
+            attackStrengths = attack,
+            defenceStrengths = defence,
+            leagueGap = leagueGap,
         )
     }
 }
