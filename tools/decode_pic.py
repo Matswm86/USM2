@@ -62,6 +62,22 @@ TV_HEIGHT = 932
 SCREEN_WIDTH = 640
 SCREEN_HEIGHT = 480
 
+# Per-screen ALL.PAL set. The codec is palette-agnostic; each screen picks one of
+# the 8 palettes in ALL.PAL. Confirmed by full-size visual inspection (palette_sweep.py):
+#   TITLE renders as muddy speckle under set 0 but as the pristine blue football +
+#   red "SOCCER" splash under set 6. The remaining static screens (BANKSCR, CHAIRSCR,
+#   MANASCR, BENCHSCR, NEWS, START) render with natural colour under set 0.
+# The match-pitch family (MATCHSCR/MUD/WET/ICE/BAR) is NOT a static map entry: the
+# game tints the pitch by live "Pitch Quality" state (strings in USM2E.EXE), so its
+# palette belongs to the Phase-3 match renderer, not this static decode. MAINSCR is a
+# bare carpet/wall texture under every set; the office furniture is composited from
+# sprite overlays (TOOLS.BIT) at runtime, so no palette alone makes it an office.
+# Anything not in this map uses DEFAULT_PALETTE.
+DEFAULT_PALETTE = 0
+PER_SCREEN_PALETTE = {
+    "TITLE": 6,
+}
+
 
 def decode_pak2(data: bytes, width: int = SCREEN_WIDTH, height: int = SCREEN_HEIGHT) -> bytes:
     """
@@ -226,8 +242,9 @@ def main() -> None:
         help="Path to ALL.PAL (default: original/ALL.PAL)",
     )
     ap.add_argument(
-        "--palette-index", type=int, default=0,
-        help="Which of the 8 palettes in ALL.PAL to use (0-7, default 0)",
+        "--palette-index", type=int, default=None,
+        help="Force one ALL.PAL set (0-7) for every file. Default: use the per-screen "
+             "PER_SCREEN_PALETTE map (TITLE=6, everything else=0).",
     )
     args = ap.parse_args()
 
@@ -251,7 +268,8 @@ def main() -> None:
         print(f"No .PIC files found in {orig_dir}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Palette : {allpal_path}  [index {args.palette_index}]")
+    pal_mode = f"forced index {args.palette_index}" if args.palette_index is not None else "per-screen map"
+    print(f"Palette : {allpal_path}  [{pal_mode}]")
     print(f"Output  : {out_dir}")
     print()
 
@@ -260,9 +278,11 @@ def main() -> None:
 
     for pic in pic_files:
         try:
-            out_path, vs, w, h = decode_file(pic, out_dir, allpal_path, args.palette_index)
+            stem = pic.stem.upper()
+            pal = args.palette_index if args.palette_index is not None else PER_SCREEN_PALETTE.get(stem, DEFAULT_PALETTE)
+            out_path, vs, w, h = decode_file(pic, out_dir, allpal_path, pal)
             results.append((pic.name, out_path, vs))
-            print(f"  {pic.name:15s}  {w}x{h}  vscore={vs:.4f}  ->  {out_path.name}")
+            print(f"  {pic.name:15s}  {w}x{h}  pal={pal}  vscore={vs:.4f}  ->  {out_path.name}")
         except Exception as exc:
             print(f"  {pic.name:15s}  ERROR: {exc}", file=sys.stderr)
             errors += 1

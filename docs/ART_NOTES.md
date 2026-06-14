@@ -30,21 +30,46 @@ Status of the screen-graphics pipeline, after the 2026-06-14 diagnosis.
 
 Exact stream consumption on all four ⇒ decompression is sound.
 
+## Per-screen palette map — RESOLVED (2026-06-14 session 3)
+
+Swept all 14 screens (`palette_sweep.py <screen>` → contact sheet) and inspected
+each full-size. Result is now baked into `decode_pic.py` as `PER_SCREEN_PALETTE`
+(default `DEFAULT_PALETTE = 0`):
+
+| screen(s)                                   | set | basis |
+|---------------------------------------------|-----|-------|
+| TITLE                                       | **6** | pristine blue football + red "SOCCER" + Impressions credit; set 0 = speckle. **Shipped: app home hero.** |
+| BANKSCR, CHAIRSCR, MANASCR, BENCHSCR, NEWS, START | 0 | render with natural colour at set 0 (skin tones, wood, green pitch). Already the staged versions. |
+| MAINSCR                                     | 0 | bare carpet/wall texture under every set — needs the sprite pipeline, not a palette. |
+| TV                                          | 0 | 83×932 ticker/scoreboard strip, not a full screen background. |
+| MATCHSCR, MATCHMUD, MATCHWET, MATCHICE, MATCHBAR | (none) | **NOT a static map entry — see below.** |
+
+**Why the match family is not in the static map.** USM2E.EXE carries live
+"Pitch Quality : Wet / Mud / Ice / ..." strings (file ~0xedcd0) and only one
+palette file (`all.pal`); the game tints the pitch from live pitch-condition
+state. So the match-screen palette belongs to the **Phase-3 match renderer**, not
+this static decode. Visual finding for when that lands: **set 1** keeps the
+weather distinct (green grass + brown mud/worn patches), while set 5 over-saturates
+everything to flat green and loses the condition; MATCHICE wants set 0/6 (blue
+frost). These are unused until a match view exists, so they are left at the
+default (0) in staging rather than baking a guess.
+
+There was **no static screen→palette index table** to recover from the EXE: the
+`.pic` filenames sit in a packed C-string literal block with no interleaved
+palette bytes, and palette selection is code/state-driven.
+
 ## What's left for faithful art
 
-1. **Per-screen palette map.** Run `palette_sweep.py <screen>` for each of the 14
-   screens, eyeball the contact sheet, record the right set. Then make
-   `decode_pic.py` take a `{stem: set}` map (default 0) instead of a global index,
-   and re-stage. Confirmed so far: `TITLE = 6`. The map probably also exists in
-   USM2E.EXE as a per-screen palette index — worth finding it there rather than
-   eyeballing all 14.
-2. **Sprite pipeline.** Decompress `TOOLS.BIT` / `*.BIT` (same PAK2 codec works on
-   them per Phase 1), slice per-frame using the blit dimensions in the EXE, and
-   composite onto the background screens so the office/manager/bank views look
-   like the game. This is the bigger piece.
-3. Only then wire real backgrounds into the app. Until then the app uses clean
-   themed headers (see `OfficeScreen`); the decoded `.PIC` PNGs bundled in assets
-   are the set-0 versions and are not yet shown.
+1. ~~Per-screen palette map~~ — DONE (above).
+2. **Sprite pipeline.** Decompress `TOOLS.BIT` / `*.BIT` / `pitch.spr` (same PAK2
+   codec works on them per Phase 1), slice per-frame using the blit dimensions in
+   the EXE, and composite onto the background screens so the office/manager/bank
+   views look like the game. This is the bigger piece, and the only thing that
+   turns MAINSCR into an office.
+3. Wire the remaining real backgrounds into the app **as their game screens get
+   built** (Phase 3): BANK/CHAIR/MANA/BENCH/NEWS render correctly at set 0 today
+   but have no screen to attach to yet. TITLE (set 6) is already wired as the
+   `OfficeScreen` home hero.
 
 ## Tools
 - `tools/decode_pic.py` — PAK2 decompressor + PNG writer (palette index is a CLI flag).

@@ -1,5 +1,6 @@
 package no.mwmai.usm2.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -33,8 +34,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import no.mwmai.usm2.Club
@@ -87,26 +88,39 @@ fun ErrorScreen(message: String) {
 
 @Composable
 fun OfficeScreen(data: GameData, onSquads: () -> Unit, onTransfers: () -> Unit) {
-    // Original office artwork (MAINSCR) is bypassed until the PAK2 art codec is
-    // fixed (it still renders fill regions as noise). Clean themed header for now.
+    // Home hero = the real decoded TITLE splash (ALL.PAL set 6: blue football +
+    // red "SOCCER" wordmark). Shown Fit on black so the whole globe is visible
+    // (the art's own margins are black, so the letterbox is seamless). Falls back
+    // to a themed text header if the asset is missing. The office room itself
+    // (MAINSCR) needs the sprite-overlay pipeline, so it is not used yet.
+    val title = rememberAssetImage("img/TITLE.png")
     Column(Modifier.fillMaxSize().background(Bg)) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(210.dp)
-                .background(Brush.verticalGradient(listOf(Color(0xFF12643A), Bg))),
+                .height(230.dp)
+                .background(Color.Black),
             contentAlignment = Alignment.Center,
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("⚽", style = MaterialTheme.typography.displayMedium)
-                Spacer(Modifier.height(6.dp))
-                Text("ULTIMATE", color = Ink, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-                Text(
-                    "SOCCER MANAGER 2",
-                    color = Color(0xFF7FE0A6),
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.headlineSmall,
+            if (title != null) {
+                Image(
+                    bitmap = title,
+                    contentDescription = "Ultimate Soccer Manager 2",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
                 )
+            } else {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("⚽", style = MaterialTheme.typography.displayMedium)
+                    Spacer(Modifier.height(6.dp))
+                    Text("ULTIMATE", color = Ink, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "SOCCER MANAGER 2",
+                        color = Color(0xFF7FE0A6),
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.headlineSmall,
+                    )
+                }
             }
         }
         Spacer(Modifier.height(22.dp))
