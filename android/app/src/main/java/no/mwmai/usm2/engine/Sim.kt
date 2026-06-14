@@ -53,6 +53,19 @@ object Sim {
         return intArrayOf(hg, ag)
     }
 
+    /**
+     * Deterministic goal minutes (1..90) for an already-known scoreline. Seeded
+     * from the same per-fixture [seed] the score was drawn with, so a replayed
+     * save shows the identical timeline. Purely cosmetic spacing: the totals come
+     * from [play], this only decides WHEN each goal goes in. Returns (home, away)
+     * minute lists, each sorted ascending.
+     */
+    fun goalMinutes(homeGoals: Int, awayGoals: Int, seed: Long): Pair<List<Int>, List<Int>> {
+        val rng = Rng(seed xor 0x51ED27015A1CL)
+        fun draw(n: Int) = List(n) { (1 + (rng.nextDouble() * 90).toInt()).coerceIn(1, 90) }.sorted()
+        return draw(homeGoals) to draw(awayGoals)
+    }
+
     /** Knuth's Poisson sampler. */
     private fun poisson(rng: Rng, lambda: Double): Int {
         if (lambda <= 0.0) return 0

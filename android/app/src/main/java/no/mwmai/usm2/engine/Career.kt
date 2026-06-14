@@ -34,6 +34,20 @@ data class ClubStrength(val overall: Double, val attack: Double, val defence: Do
 data class Tier(val division: Int, val divisionName: String, val clubIds: List<String>)
 
 /**
+ * The managed club's upcoming fixture, pre-played to a result for the match view
+ * (see [Career.previewNextManagedMatch]). Transient: never persisted — the real
+ * record is written by [Career.playNextRound], which reproduces this exact score.
+ */
+data class ManagedPreview(
+    val homeId: String,
+    val awayId: String,
+    val homeGoals: Int,
+    val awayGoals: Int,
+    val seed: Long,
+    val homeIsManaged: Boolean,
+)
+
+/**
  * A multi-season management career. Fully self-contained and serializable: every
  * club's strength is frozen at career start ([clubStrengths]), and the whole
  * group [pyramid] travels in the save, so advancing a season OR rolling it over
@@ -188,6 +202,38 @@ data class Career(
             fixtures = Schedule.season(newClubIds.size, newSeed),
             season = season + 1,
             pyramid = newTiers,
+        )
+    }
+
+    /**
+     * The managed club's next fixture pre-played to its result, WITHOUT recording
+     * it, so the match view can animate toward the real outcome. Uses the exact
+     * same [fixtureSeed] + [Sim] path as [playNextRound], so the visualised score
+     * is identical to the one [playNextRound] will store when the round is played.
+     * Null at season end or when the managed club has no remaining fixture.
+     */
+    fun previewNextManagedMatch(): ManagedPreview? {
+        if (seasonComplete) return null
+        val f = nextFixtureForManaged() ?: return null
+        // Only watchable when the managed fixture is in the round about to be
+        // played; in an odd-sized division the club can have a bye this round
+        // (its next fixture is later), so there is no match to watch — advance.
+        if (f.round != nextRound) return null
+        val seed = fixtureSeed(f.round, f)
+        val splitReady = attackStrengths.size == clubIds.size && defenceStrengths.size == clubIds.size
+        val r = if (splitReady) {
+            Sim.play(
+                attackStrengths[f.home], defenceStrengths[f.home],
+                attackStrengths[f.away], defenceStrengths[f.away],
+                leagueGap, seed,
+            )
+        } else {
+            Sim.playOverall(strengths[f.home], strengths[f.away], seed)
+        }
+        return ManagedPreview(
+            homeId = clubIds[f.home], awayId = clubIds[f.away],
+            homeGoals = r[0], awayGoals = r[1], seed = seed,
+            homeIsManaged = f.home == managedIndex,
         )
     }
 

@@ -6,6 +6,10 @@ Produces, under android/app/src/main/assets/ (git-tracked, self-contained build)
   img/scene/<NAME>.png  each room PIC with the baked toolbar band removed
   data/formations.json  the 18 real formations (base set) from FORM.DAT,
                         normalised to [0,1] pitch coords (GK bottom, attack top)
+  img/match/pitch.png   MATCHSCR.PIC at ALL.PAL set 1 (the live green pitch)
+  img/match/{h,a}_*.png the real PITCH.SPR player run cycle (home red kit;
+                        away = red kit recoloured blue), transparent index 0
+  data/pitch_quad.json  the playable-pitch trapezoid corners in [0,1] of pitch.png
 
 Run: python3 tools/stage_phase3_ui.py   (then re-run --verify to eyeball crops)
 """
@@ -15,7 +19,12 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from decode_pic import decode_pak2, load_palette, pixels_to_image  # noqa: E402
+from decode_sprites import decode_pak2_full  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "android/app/src/main/assets"
@@ -95,6 +104,96 @@ def export_formations():
     return n_form, SET_OPEN_PLAY
 
 
+# --- match view: pitch background + real player sprites ----------------------
+# MATCHSCR renders as the live green pitch under ALL.PAL set 1 (set 0 is grey;
+# ART_NOTES.md "match family"). PITCH.SPR is a PAK2 sprite bank whose first block
+# is 30x32 outfield players (autocorrelation gives row width 30, frame stride 960
+# = 30x32; verified by rendering the contact sheet). The kit is baked RED; the
+# away kit is that same sprite with the saturated-red shirt indices remapped to
+# blue (skin and the blue ground-shadow are left untouched).
+MATCH_PALETTE = 1
+SPR_W, SPR_H = 30, 32
+SPR_IDLE = 1                     # front-facing standing frame
+SPR_RUN = [15, 16, 17, 18, 19]  # a clean left-facing run cycle (flip for right)
+TRANSPARENT = 0
+
+
+def _away_palette(pal: bytes) -> bytes:
+    """Recolour the saturated-red kit indices to blue (keep skin + shadow).
+    A shirt index is red-dominant (R>G+50, R>B+50) and not skin (G<70); it maps
+    to (G, G, R) so a bright red becomes a matching bright blue."""
+    out = bytearray(pal)
+    for i in range(256):
+        r, g, b = pal[3 * i], pal[3 * i + 1], pal[3 * i + 2]
+        if r > g + 50 and r > b + 50 and g < 70:
+            out[3 * i], out[3 * i + 1], out[3 * i + 2] = g, g, r
+    return bytes(out)
+
+
+def _sprite(buf: bytes, idx: int, pal: bytes) -> Image.Image:
+    """One 30x32 PITCH.SPR frame as RGBA with index 0 transparent."""
+    fp = SPR_W * SPR_H
+    seg = buf[idx * fp:(idx + 1) * fp]
+    im = Image.new("P", (SPR_W, SPR_H))
+    im.putpalette(list(pal))
+    im.putdata(seg)
+    rgba = im.convert("RGBA")
+    a = np.array(rgba)
+    a[np.frombuffer(seg, np.uint8).reshape(SPR_H, SPR_W) == TRANSPARENT, 3] = 0
+    return Image.fromarray(a)
+
+
+def _pitch_quad(img: Image.Image) -> dict:
+    """The playable-pitch trapezoid in [0,1], from the green region of pitch.png.
+    Pitch pixels are green (G>=R-5, G>B+8, G>40); the warm crowd is excluded. The
+    top/bottom rows with a wide green span give the far/near touchlines; the 2nd/
+    98th column percentiles give the left/right edges (ignoring stray crowd green)."""
+    a = np.array(img.convert("RGB"))
+    h, w, _ = a.shape
+    r, g, b = a[:, :, 0].astype(int), a[:, :, 1].astype(int), a[:, :, 2].astype(int)
+    pitch = (g >= r - 5) & (g > b + 8) & (g > 40)
+    rows = [y for y in range(h) if pitch[y].sum() > 180]
+    top, bot = min(rows), max(rows)
+
+    def extent(y):
+        xs = np.where(pitch[y])[0]
+        lo, hi = np.percentile(xs, [2, 98])
+        return int(lo), int(hi)
+
+    tl, tr = extent(top + 3)
+    bl, br = extent(bot - 3)
+    return {
+        "tl": [round(tl / w, 4), round(top / h, 4)],
+        "tr": [round(tr / w, 4), round(top / h, 4)],
+        "br": [round(br / w, 4), round(bot / h, 4)],
+        "bl": [round(bl / w, 4), round(bot / h, 4)],
+    }
+
+
+def export_match():
+    out = IMG / "match"
+    out.mkdir(parents=True, exist_ok=True)
+    home_pal = load_palette(ORIG / "ALL.PAL", MATCH_PALETTE)
+    away_pal = _away_palette(home_pal)
+
+    # 1. pitch background (full 640x480 MATCHSCR at set 1)
+    pixels = decode_pak2((ORIG / "MATCHSCR.PIC").read_bytes())
+    pitch = pixels_to_image(pixels, 640, 480, home_pal)
+    pitch.save(out / "pitch.png")
+
+    # 2. player sprites (home red kit, away blue kit) from PITCH.SPR
+    buf = decode_pak2_full((ORIG / "PITCH.SPR").read_bytes())
+    _sprite(buf, SPR_IDLE, home_pal).save(out / "h_idle.png")
+    _sprite(buf, SPR_IDLE, away_pal).save(out / "a_idle.png")
+    for k, fr in enumerate(SPR_RUN):
+        _sprite(buf, fr, home_pal).save(out / f"h_run{k}.png")
+        _sprite(buf, fr, away_pal).save(out / f"a_run{k}.png")
+
+    # 3. playable-pitch quad in [0,1] of pitch.png
+    (ASSETS / "data" / "pitch_quad.json").write_text(json.dumps(_pitch_quad(pitch)))
+    return 2 + 2 * len(SPR_RUN)
+
+
 def verify():
     """Render a labelled contact sheet of the icon crops to confirm alignment."""
     icons = sorted((IMG / "tb").glob("ic_*.png"))
@@ -118,8 +217,9 @@ def main():
     ni = crop_icons()
     ns = crop_scenes()
     nf, open_play_set = export_formations()
+    nm = export_match()
     verify()
-    print(f"icons={ni}  scenes={ns}  formations={nf}  open_play_set={open_play_set}")
+    print(f"icons={ni}  scenes={ns}  formations={nf}  open_play_set={open_play_set}  match_assets={nm}")
 
 
 if __name__ == "__main__":

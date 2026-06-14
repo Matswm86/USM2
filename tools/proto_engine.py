@@ -269,6 +269,57 @@ def validate_rollover(clubs, players):
     print(f"   promo_slots={promo}; ran 6 rollovers without losing or duplicating a club")
 
 
+def fixture_seed(season_seed, rnd, home, away):
+    """Mirror of Kotlin Career.fixtureSeed (used by playNextRound + the preview)."""
+    return (season_seed * 1_000_003 + rnd * 9176 + home * 131 + away) & 0xFFFFFFFFFFFFFFFF
+
+
+def goal_minutes(home_goals, away_goals, seed):
+    """Mirror of Kotlin Sim.goalMinutes: minutes 1..90 from the fixture seed."""
+    rng = Rng(seed ^ 0x51ED27015A1C)
+    def draw(n):
+        return sorted(max(1, min(90, 1 + int(rng.next_double() * 90))) for _ in range(n))
+    return draw(home_goals), draw(away_goals)
+
+
+def validate_match_timeline(epl, players, by_club):
+    """The match view animates toward the SAME score playNextRound records, then
+    spaces the goals over 1..90. Assert: (a) the preview path and the round-play
+    path produce the identical managed result from the shared fixtureSeed, and
+    (b) the goal timeline has one minute per goal, all in 1..90, and is
+    deterministic for a given seed."""
+    n = len(epl)
+    trip = [club_strength_triple(by_club.get(c["id"], [])) for c in epl]
+    attack = [t[1] for t in trip]
+    defence = [t[2] for t in trip]
+    gap = sum(attack) / n - sum(defence) / n
+    sched = double_round_robin(n)
+    season_seed = 777
+    managed = 0
+    # next fixture for the managed club is in round 0
+    rnd = 0
+    nxt = next((m for m in sched[rnd] if managed in m), None)
+    assert nxt is not None, "managed club has no fixture in round 0"
+    h, a = nxt
+    pseed = fixture_seed(season_seed, rnd, h, a)
+    preview = sim_ad(attack[h], defence[h], attack[a], defence[a], gap, pseed)
+    # "play the whole round" the same way and read back the managed fixture
+    played = {}
+    for (hh, aa) in sched[rnd]:
+        s = fixture_seed(season_seed, rnd, hh, aa)
+        played[(hh, aa)] = sim_ad(attack[hh], defence[hh], attack[aa], defence[aa], gap, s)
+    assert played[(h, a)] == preview, f"preview {preview} != round-play {played[(h, a)]}"
+
+    hg, ag = preview
+    hmin, amin = goal_minutes(hg, ag, pseed)
+    assert len(hmin) == hg and len(amin) == ag, "goal count != scoreline"
+    assert all(1 <= m <= 90 for m in hmin + amin), "minute out of 1..90"
+    assert (hmin, amin) == goal_minutes(hg, ag, pseed), "timeline not deterministic"
+    print("\n== match preview == round-play, timeline deterministic: PASS ==")
+    print(f"  managed fixture {epl[h]['name']} {hg}-{ag} {epl[a]['name']}  "
+          f"home goals @ {hmin}  away goals @ {amin}")
+
+
 def main():
     clubs = json.loads((ASSETS / "clubs.json").read_text())
     players = json.loads((ASSETS / "players.json").read_text())
@@ -359,6 +410,7 @@ def main():
         print(f"{rank:>2} {epl[ti]['name']:22} {r['p']:>2} {r['w']:>2} {r['d']:>2} "
               f"{r['l']:>2} {r['gf']:>3} {r['ga']:>3} {gd:>3} {r['pts']:>3}")
     validate_rollover(clubs, players)
+    validate_match_timeline(epl, players, by_club)
     print("\nALL CHECKS PASSED")
 
 

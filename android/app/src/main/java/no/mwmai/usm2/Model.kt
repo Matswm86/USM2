@@ -69,6 +69,24 @@ data class Player(
 }
 
 /**
+ * The playable-pitch trapezoid inside the staged match background (img/match/
+ * pitch.png), as fractions [0,1] of that image. Produced by tools/stage_phase3_ui
+ * (`_pitch_quad`) and shipped as data/pitch_quad.json; the defaults mirror the
+ * shipped values so the match view still maps correctly if the file is missing.
+ */
+@Serializable
+data class PitchQuad(
+    val tl: List<Double> = listOf(0.1094, 0.0854),
+    val tr: List<Double> = listOf(0.8984, 0.0854),
+    val br: List<Double> = listOf(0.9781, 0.7458),
+    val bl: List<Double> = listOf(0.0187, 0.7458),
+) {
+    companion object {
+        val DEFAULT = PitchQuad()
+    }
+}
+
+/**
  * Fully-loaded world database plus the lookups the UI needs. Built once on the
  * IO dispatcher (see [GameRepository]); screens read it from the ViewModel.
  */
@@ -77,6 +95,8 @@ class GameData(
     val players: List<Player>,
     /** 18 real formations from FORM.DAT: each = 11 [x,y] pairs, normalised [0,1]. */
     val formations: List<List<List<Double>>> = emptyList(),
+    /** The match-view pitch trapezoid (img/match/pitch.png coords). */
+    val pitchQuad: PitchQuad = PitchQuad.DEFAULT,
 ) {
     val clubsById: Map<String, Club> = clubs.associateBy { it.id }
 

@@ -32,7 +32,13 @@ object GameRepository {
                 json.decodeFromString<List<List<List<Double>>>>(it.readBytes().decodeToString())
             }
         }.getOrDefault(emptyList())
-        return GameData(clubs, players, formations)
+        // The playable-pitch trapezoid for the match view (img/match/pitch.png).
+        val pitchQuad = runCatching {
+            app.assets.open("data/pitch_quad.json").use {
+                json.decodeFromString<PitchQuad>(it.readBytes().decodeToString())
+            }
+        }.getOrDefault(PitchQuad.DEFAULT)
+        return GameData(clubs, players, formations, pitchQuad)
     }
 }
 

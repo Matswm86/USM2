@@ -85,6 +85,18 @@ fun RoomHost(
     onExit: () -> Unit,
 ) {
     var room by remember { mutableStateOf(Room.OFFICE) }
+    // When set, the managed club's next fixture is watched as an animated match
+    // before its result (and the rest of the round) is recorded by onPlayMatch.
+    var match by remember { mutableStateOf<no.mwmai.usm2.ui.MatchPlan?>(null) }
+
+    fun startMatch() {
+        if (career.seasonComplete) {
+            onRollover()
+            return
+        }
+        val plan = buildMatchPlan(data, career)
+        if (plan == null) onPlayMatch() else match = plan
+    }
 
     fun nav(icon: Int) {
         when (icon) {
@@ -96,10 +108,19 @@ fun RoomHost(
             14 -> room = Room.TACTICS
             15 -> room = Room.TEAM
             16 -> room = Room.DUGOUT
-            21 -> if (career.seasonComplete) onRollover() else onPlayMatch()
+            21 -> startMatch()
             22 -> onExit()
             else -> {}
         }
+    }
+
+    val plan = match
+    if (plan != null) {
+        MatchView(data, plan) {
+            match = null
+            onPlayMatch()
+        }
+        return
     }
 
     RoomShell(onIcon = ::nav) {
@@ -107,7 +128,7 @@ fun RoomHost(
             Room.OFFICE -> SceneArea("img/scene/MANASCR.png", officeObjects { room = it })
             Room.BOARDROOM -> SceneArea("img/scene/CHAIRSCR.png", emptyList())
             Room.BANK -> SceneArea("img/scene/BANKSCR.png", emptyList()) { BankPanel(data, career) }
-            Room.DUGOUT -> SceneArea("img/scene/BENCHSCR.png", emptyList()) { MatchCentre(data, career, onPlayMatch, onRollover) }
+            Room.DUGOUT -> SceneArea("img/scene/BENCHSCR.png", emptyList()) { MatchCentre(data, career, ::startMatch, onRollover) }
             Room.NEWS -> SceneArea("img/scene/NEWS.png", emptyList()) { NewsStrip(data, career) }
             Room.TEAM -> TeamContent(data, career)
             Room.TABLE -> TableContent(data, career)
