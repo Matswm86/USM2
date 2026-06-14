@@ -365,7 +365,7 @@ fun MatchView(data: GameData, plan: MatchPlan, onFinish: () -> Unit) {
             for (i in order) {
                 val home = i < 11
                 val mv = sim.moving[i]
-                val bmp: ImageBitmap? = when {
+                val bmp = when {
                     mv && home -> homeRun[frame]
                     mv && !home -> awayRun[frame]
                     home -> homeIdle
