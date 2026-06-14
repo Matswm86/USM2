@@ -5,11 +5,6 @@ football-management classic **Ultimate Soccer Manager 2**, re-laid for touch.
 It reuses the original game's real database (clubs, managers, players,
 stadiums) and screen artwork, decoded from the original files.
 
-<p align="center">
-  <img src="docs/screen-title.png" width="48%" alt="USM2 title screen">
-  <img src="docs/screen-office.png" width="48%" alt="The manager's office">
-</p>
-
 ## Download
 
 [![Build APK](https://github.com/Matswm86/USM2/actions/workflows/build-android.yml/badge.svg)](https://github.com/Matswm86/USM2/actions/workflows/build-android.yml)

@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -86,23 +87,36 @@ fun ErrorScreen(message: String) {
 
 @Composable
 fun OfficeScreen(data: GameData, onSquads: () -> Unit, onTransfers: () -> Unit) {
+    // Original office artwork (MAINSCR) is bypassed until the PAK2 art codec is
+    // fixed (it still renders fill regions as noise). Clean themed header for now.
     Column(Modifier.fillMaxSize().background(Bg)) {
-        ScreenBanner("img/MAINSCR.png", height = 230)
-        Spacer(Modifier.height(18.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(210.dp)
+                .background(Brush.verticalGradient(listOf(Color(0xFF12643A), Bg))),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("⚽", style = MaterialTheme.typography.displayMedium)
+                Spacer(Modifier.height(6.dp))
+                Text("ULTIMATE", color = Ink, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "SOCCER MANAGER 2",
+                    color = Color(0xFF7FE0A6),
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+            }
+        }
+        Spacer(Modifier.height(22.dp))
         Text(
-            "Ultimate Soccer Manager 2",
+            "${data.clubs.size} clubs · ${data.players.size} players · 1996/97 season",
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-            color = Ink,
-            fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.headlineSmall,
-        )
-        Text(
-            "${data.clubs.size} clubs · ${data.players.size} players · 1996/97 database",
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
             color = Sub,
             style = MaterialTheme.typography.bodyMedium,
         )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(22.dp))
         OfficeButton("Squads & Tables", onSquads)
         OfficeButton("Transfer Market", onTransfers)
     }
