@@ -332,9 +332,9 @@ fun PlayerScreen(data: GameData, idx: Int, onBack: () -> Unit) {
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(bottom = 10.dp),
                     )
-                    SkillBars(p.attributes)
+                    SkillBars(p.ratings)
                     Text(
-                        "Column meanings (tackle/pass/shoot/…) still being recovered.",
+                        "Ratings from the USM2E.EXE label set; goalkeeping / defending / attacking confirmed against the real player data.",
                         color = Sub,
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(top = 10.dp),

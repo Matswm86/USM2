@@ -5,10 +5,11 @@ import kotlinx.serialization.Serializable
 /**
  * Slim data model mirroring the JSON emitted by tools/stage_assets.py.
  *
- * The original game stores 11 skill bytes per player; index 5 is a constant
- * normaliser (100), not an attribute, so it is excluded from [Player.rating] and
- * from display. The per-column attribute names (tackle / pass / shoot / ...) are
- * still being recovered from the EXE, so skills are shown positionally for now.
+ * The original game stores 11 skill bytes per player; index 5 is the const-100
+ * normaliser. The displayed categories use the real USM2E.EXE labels (Passing /
+ * Defending / Attacking / Ball Skills / Fitness/Physical / Goalkeeping); see
+ * [Player] for which byte backs each (goalkeeping/defending/attacking confirmed
+ * against the real player data, the rest closest-fit).
  */
 @Serializable
 data class Club(
@@ -31,16 +32,40 @@ data class Player(
     val club: String? = null,
     val league: String = "",
 ) {
-    /** Index of the constant normaliser byte that is not a real attribute. */
-    private val normaliserIndex get() = 5
+    // Skill-byte indices in `skills` (byte 128 / index 5 is the const-100
+    // normaliser). idx0=Goalkeeping, idx1=Defending and idx3=Attacking are
+    // confirmed from the USM2E.EXE label set ("Passing / Defending / Attacking /
+    // Ball Skills / Fitness/Physical") cross-checked against the real player data
+    // (keepers ~98 on idx0, defenders ~78 on idx1, forwards ~74 on idx3). The
+    // remaining categories are the closest-fitting bytes; index 10 is a flat
+    // hidden trait, not a displayed skill.
+    private fun b(i: Int) = skills.getOrElse(i) { 0 }
 
-    /** Ordered attribute values with the normaliser byte removed. */
-    val attributes: List<Int>
-        get() = skills.filterIndexed { i, _ -> i != normaliserIndex }
+    val goalkeeping get() = b(0)
+    val defending get() = b(1)
+    val ballSkills get() = b(2)
+    val attacking get() = b(3)
+    /** Fitness/Physical = mean of the pace / strength / stamina bytes. */
+    val fitness get() = (b(4) + b(6) + b(9)) / 3
+    val passing get() = b(7)
 
-    /** Heuristic overall = mean of the real attribute bytes (0-99 scale). */
+    val isGoalkeeper get() = goalkeeping > 55
+
+    /** Named rating categories shown on the player screen (real USM2 labels). */
+    val ratings: List<Pair<String, Int>>
+        get() = if (isGoalkeeper) {
+            listOf("Goalkeeping" to goalkeeping, "Defending" to defending, "Passing" to passing, "Fitness/Physical" to fitness)
+        } else {
+            listOf("Attacking" to attacking, "Defending" to defending, "Passing" to passing, "Ball Skills" to ballSkills, "Fitness/Physical" to fitness)
+        }
+
+    /** Overall, role-weighted so keepers aren't judged on outfield skills. */
     val rating: Int
-        get() = attributes.takeIf { it.isNotEmpty() }?.let { it.sum() / it.size } ?: 0
+        get() = if (isGoalkeeper) {
+            (goalkeeping * 0.6 + fitness * 0.2 + defending * 0.2).toInt()
+        } else {
+            ratings.sumOf { it.second } / ratings.size
+        }
 }
 
 /**

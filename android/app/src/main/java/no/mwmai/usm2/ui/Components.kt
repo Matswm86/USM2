@@ -78,17 +78,17 @@ fun RatingChip(rating: Int, modifier: Modifier = Modifier) {
     }
 }
 
-/** Positional skill bars (attribute names still being recovered from the EXE). */
+/** Named rating bars (real USM2 player-screen categories). */
 @Composable
-fun SkillBars(attributes: List<Int>, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        attributes.forEachIndexed { i, v ->
+fun SkillBars(ratings: List<Pair<String, Int>>, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        ratings.forEach { (name, v) ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "S${i + 1}",
-                    modifier = Modifier.size(width = 34.dp, height = 18.dp),
+                    name,
+                    modifier = Modifier.size(width = 116.dp, height = 18.dp),
                     color = Color(0xFFB9C7BD),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
                 )
                 Box(
                     Modifier
