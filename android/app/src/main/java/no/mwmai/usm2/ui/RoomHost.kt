@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import no.mwmai.usm2.GameData
@@ -47,37 +49,32 @@ import no.mwmai.usm2.engine.Standings
 
 private val Ink = Color(0xFFE8F0E8)
 private val Sub = Color(0xFFB7C7BC)
-private val Bars = Color(0xFF09140D)   // pillarbox surround
+private val Bars = Color(0xFF09140D)
+private val NavBg = Color(0xFF12201A)
 private val PitchGreen = Color(0xFF2E7D43)
 private val ShirtRed = Color(0xFFC62828)
 private val Gold = Color(0xFFE7C84A)
 
 enum class Room { OFFICE, BOARDROOM, DUGOUT, BANK, NEWS, TEAM, TABLE, TACTICS }
 
-/** A clickable region in 640x480 image space (fractions of the image). */
+/** A clickable region in scene-image space (fractions of the displayed scene). */
 private class Hotspot(
     val fx: Float, val fy: Float, val fw: Float, val fh: Float,
-    val label: String? = null,
+    val label: String,
     val onTap: () -> Unit,
 )
 
-// Toolbar icon geometry, measured from the real baked toolbar (640x480 image).
-private const val IMG_W = 640f
-private const val IMG_H = 480f
-private const val TB_X0 = 8f
-private const val TB_W = 26f
-private const val TB_Y = 15f
-private const val TB_H = 28f
+// The big touch nav: the original's tiny mouse toolbar is unhittable on a phone,
+// so the main functions are exposed as large labelled buttons using the real
+// icons. Each pair is (toolbar-icon index, label). Bank/Dugout provisional.
+private val NAV = listOf(
+    2 to "Office", 15 to "Team", 14 to "Tactics", 8 to "Table",
+    7 to "News", 11 to "Bank", 16 to "Dugout", 21 to "Play", 22 to "Exit",
+)
 
-/**
- * The faithful room shell. Each room shows the REAL full-screen .PIC (with its
- * own baked toolbar) at full height, smooth-scaled, with invisible hotspots laid
- * over the real toolbar icons and the room's objects. Data rooms (team / table /
- * tactics) carry the same toolbar as a real icon row so navigation is consistent.
- *
- * Toolbar index -> room mapping is read off the actual icons. Bank (11) and
- * dugout (16) are provisional pending on-device confirmation.
- */
+private const val SCENE_W = 640f
+private const val SCENE_H = 437f   // PIC height after the baked toolbar is cropped
+
 @Composable
 fun RoomHost(data: GameData, career: Career, onPlayMatch: () -> Unit, onExit: () -> Unit) {
     var room by remember { mutableStateOf(Room.OFFICE) }
@@ -98,53 +95,61 @@ fun RoomHost(data: GameData, career: Career, onPlayMatch: () -> Unit, onExit: ()
         }
     }
 
-    val toolbar = remember { (0 until 24).map { i -> i } }
-
-    when (room) {
-        Room.OFFICE -> RoomScene("img/MANASCR.png", toolbar, ::nav, officeObjects { room = it })
-        Room.BOARDROOM -> RoomScene("img/CHAIRSCR.png", toolbar, ::nav, emptyList())
-        Room.DUGOUT -> RoomScene("img/BENCHSCR.png", toolbar, ::nav, emptyList(), bottom = {
-            MatchStrip(data, career, onPlayMatch)
-        })
-        Room.BANK -> RoomScene("img/BANKSCR.png", toolbar, ::nav, emptyList())
-        Room.NEWS -> RoomScene("img/NEWS.png", toolbar, ::nav, emptyList(), bottom = { NewsStrip(data, career) })
-        Room.TEAM -> DataRoom(::nav) { TeamContent(data, career) }
-        Room.TABLE -> DataRoom(::nav) { TableContent(data, career) }
-        Room.TACTICS -> DataRoom(::nav) { PitchLineup(data, career) }
+    RoomShell(onIcon = ::nav) {
+        when (room) {
+            Room.OFFICE -> SceneArea("img/scene/MANASCR.png", officeObjects { room = it })
+            Room.BOARDROOM -> SceneArea("img/scene/CHAIRSCR.png", emptyList())
+            Room.BANK -> SceneArea("img/scene/BANKSCR.png", emptyList())
+            Room.DUGOUT -> SceneArea("img/scene/BENCHSCR.png", emptyList()) { MatchStrip(data, career, onPlayMatch) }
+            Room.NEWS -> SceneArea("img/scene/NEWS.png", emptyList()) { NewsStrip(data, career) }
+            Room.TEAM -> TeamContent(data, career)
+            Room.TABLE -> TableContent(data, career)
+            Room.TACTICS -> PitchLineup(data, career)
+        }
     }
 }
 
-// ---- scene room: real PIC + aligned hotspots -------------------------------
+@Composable
+private fun RoomShell(onIcon: (Int) -> Unit, content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxSize().background(Bars)) {
+        BigNav(onIcon)
+        Box(Modifier.weight(1f).fillMaxWidth()) { content() }
+    }
+}
 
 @Composable
-private fun RoomScene(
-    asset: String,
-    toolbarIcons: List<Int>,
-    onIcon: (Int) -> Unit,
-    objects: List<Hotspot>,
-    bottom: (@Composable () -> Unit)? = null,
-) {
+private fun BigNav(onIcon: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth().height(66.dp).background(NavBg)) {
+        NAV.forEach { (idx, label) ->
+            val ic = rememberAssetImage("img/tb/ic_%02d.png".format(idx))
+            Column(
+                Modifier.weight(1f).fillMaxHeight().clickable { onIcon(idx) }.padding(2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                if (ic != null) {
+                    Image(bitmap = ic, contentDescription = label, modifier = Modifier.size(34.dp), contentScale = ContentScale.Fit)
+                }
+                Text(label, color = Ink, maxLines = 1, textAlign = TextAlign.Center, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+}
+
+// ---- scene room: denoised PIC + object hotspots ----------------------------
+
+@Composable
+private fun SceneArea(asset: String, objects: List<Hotspot>, bottom: (@Composable () -> Unit)? = null) {
     val img = rememberAssetImage(asset)
     var note by remember { mutableStateOf<String?>(null) }
     Box(Modifier.fillMaxSize().background(Bars), contentAlignment = Alignment.Center) {
-        Box(Modifier.aspectRatio(IMG_W / IMG_H, matchHeightConstraintsFirst = true)) {
+        Box(Modifier.aspectRatio(SCENE_W / SCENE_H, matchHeightConstraintsFirst = true)) {
             if (img != null) {
-                Image(
-                    bitmap = img,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.FillBounds,
-                )
+                Image(bitmap = img, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
             }
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val w = maxWidth
                 val h = maxHeight
-                // real toolbar icons
-                toolbarIcons.forEach { i ->
-                    val fx = (TB_X0 + i * TB_W) / IMG_W
-                    HotspotBox(w, h, fx, TB_Y / IMG_H, TB_W / IMG_W, TB_H / IMG_H) { onIcon(i) }
-                }
-                // room objects
                 objects.forEach { hs ->
                     HotspotBox(w, h, hs.fx, hs.fy, hs.fw, hs.fh) {
                         note = hs.label
@@ -153,7 +158,7 @@ private fun RoomScene(
                 }
             }
             note?.let {
-                Box(Modifier.align(Alignment.TopCenter).padding(top = 40.dp)) {
+                Box(Modifier.align(Alignment.BottomCenter).padding(10.dp)) {
                     Text(
                         it,
                         color = Color(0xFF06140D),
@@ -170,35 +175,19 @@ private fun RoomScene(
 
 @Composable
 private fun HotspotBox(w: Dp, h: Dp, fx: Float, fy: Float, fw: Float, fh: Float, onTap: () -> Unit) {
-    Box(
-        Modifier
-            .offset(x = w * fx, y = h * fy)
-            .size(width = w * fw, height = h * fh)
-            .clickable(onClick = onTap),
-    )
+    Box(Modifier.offset(x = w * fx, y = h * fy).size(width = w * fw, height = h * fh).clickable(onClick = onTap))
 }
 
-/** Office objects -> a name label (so they respond) and a best-guess room. The
- * object->function mapping is provisional and to be confirmed with Mats. */
+/** Office objects mapped to distinct screens; functions not built yet say so. */
 private fun officeObjects(go: (Room) -> Unit): List<Hotspot> = listOf(
-    Hotspot(0.031f, 0.115f, 0.141f, 0.250f, "Noticeboard") { go(Room.NEWS) },
-    Hotspot(0.234f, 0.104f, 0.281f, 0.271f, "Window") {},
-    Hotspot(0.242f, 0.438f, 0.320f, 0.250f, "Desk & phone") {},
-    Hotspot(0.563f, 0.250f, 0.094f, 0.396f, "Filing cabinet") { go(Room.TEAM) },
-    Hotspot(0.672f, 0.146f, 0.141f, 0.146f, "Team photo") { go(Room.TEAM) },
-    Hotspot(0.719f, 0.333f, 0.156f, 0.188f, "TV") { go(Room.NEWS) },
-    Hotspot(0.133f, 0.688f, 0.141f, 0.104f, "Printer") {},
+    Hotspot(0.031f, 0.027f, 0.141f, 0.275f, "Noticeboard") { go(Room.NEWS) },
+    Hotspot(0.234f, 0.016f, 0.281f, 0.297f, "Window: the stadium") {},
+    Hotspot(0.242f, 0.382f, 0.320f, 0.275f, "Phone: transfers (coming soon)") {},
+    Hotspot(0.563f, 0.176f, 0.094f, 0.435f, "Filing cabinet: squad") { go(Room.TEAM) },
+    Hotspot(0.672f, 0.062f, 0.141f, 0.160f, "Team photo: squad") { go(Room.TEAM) },
+    Hotspot(0.719f, 0.268f, 0.156f, 0.206f, "TV: league table") { go(Room.TABLE) },
+    Hotspot(0.133f, 0.657f, 0.141f, 0.114f, "Printer: reports (coming soon)") {},
 )
-
-// ---- data room: real toolbar icon row + content ----------------------------
-
-@Composable
-private fun DataRoom(onIcon: (Int) -> Unit, content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Color(0xFF06140D))) {
-        Toolbar(onIcon = onIcon)
-        Box(Modifier.weight(1f).fillMaxWidth()) { content() }
-    }
-}
 
 // ---- bottom strips ---------------------------------------------------------
 
@@ -207,7 +196,7 @@ private fun MatchStrip(data: GameData, career: Career, onPlayMatch: () -> Unit) 
     val last = career.lastFixtureForManaged()
     val next = career.nextFixtureForManaged()
     Row(
-        Modifier.fillMaxWidth().background(Color(0xCC06140D)).padding(horizontal = 14.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().background(Color(0xDD06140D)).padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -219,7 +208,7 @@ private fun MatchStrip(data: GameData, career: Career, onPlayMatch: () -> Unit) 
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        TextButton(if (career.seasonComplete) "Done" else "Play MD ${career.nextRound + 1}", enabled = !career.seasonComplete, onClick = onPlayMatch)
+        PillButton(if (career.seasonComplete) "Done" else "Play MD ${career.nextRound + 1}", enabled = !career.seasonComplete, onClick = onPlayMatch)
     }
 }
 
@@ -227,7 +216,7 @@ private fun MatchStrip(data: GameData, career: Career, onPlayMatch: () -> Unit) 
 private fun NewsStrip(data: GameData, career: Career) {
     val lastRound = career.fixtures.filter { it.played }.maxOfOrNull { it.round }
     val results = career.fixtures.filter { it.played && it.round == lastRound }
-    Column(Modifier.fillMaxWidth().background(Color(0xCC06140D)).padding(horizontal = 14.dp, vertical = 8.dp)) {
+    Column(Modifier.fillMaxWidth().background(Color(0xDD06140D)).padding(horizontal = 14.dp, vertical = 8.dp)) {
         Text(
             if (lastRound != null) "Matchday ${lastRound + 1}" else "No matches played",
             color = Gold,
@@ -313,9 +302,9 @@ private fun PitchLineup(data: GameData, career: Career) {
             Text("Tactics", color = Gold, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
             if (forms.isNotEmpty()) {
-                TextButton("‹") { formIdx = (formIdx - 1 + forms.size) % forms.size }
+                PillButton("‹") { formIdx = (formIdx - 1 + forms.size) % forms.size }
                 Text("Formation ${formIdx + 1}/${forms.size}", color = Ink, style = MaterialTheme.typography.bodyMedium)
-                TextButton("›") { formIdx = (formIdx + 1) % forms.size }
+                PillButton("›") { formIdx = (formIdx + 1) % forms.size }
             }
         }
         BoxWithConstraints(Modifier.fillMaxSize().background(PitchGreen)) {
@@ -358,12 +347,12 @@ private fun PlayerChip(number: Int, name: String, modifier: Modifier) {
 // ---- shared ----------------------------------------------------------------
 
 @Composable
-private fun TextButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
+private fun PillButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
         Modifier.clip(RoundedCornerShape(8.dp))
             .background(if (enabled) Gold else Color(0xFF3A4A40))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 6.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Text(label, color = Color(0xFF06140D), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
     }

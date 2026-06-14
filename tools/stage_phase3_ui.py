@@ -15,7 +15,7 @@ import json
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "android/app/src/main/assets"
@@ -42,6 +42,9 @@ def crop_icons():
 
 
 def crop_scenes():
+    """Room scene = the PIC below the toolbar, DENOISED. The art is 256-colour
+    dithered DOS graphics; a 3x3 median filter removes the dither speckle (which
+    upscales into noise on a phone) while preserving structure and edges."""
     out = IMG / "scene"
     out.mkdir(parents=True, exist_ok=True)
     n = 0
@@ -50,7 +53,8 @@ def crop_scenes():
         if not p.exists():
             continue
         im = Image.open(p).convert("RGB")
-        im.crop((0, SCENE_TOP, im.size[0], im.size[1])).save(out / f"{name}.png")
+        scene = im.crop((0, SCENE_TOP, im.size[0], im.size[1]))
+        scene.filter(ImageFilter.MedianFilter(3)).save(out / f"{name}.png")
         n += 1
     return n
 
