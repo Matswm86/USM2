@@ -64,12 +64,22 @@ so do not guess names from it.
   `^t` team-name placeholders.
 - ADVERT.DAT: **100** advertising-hoarding names.
 - COACH.DAT: **195** staff names (`Page` section marker + name/attr records).
-- FORM.DAT / *.FOR: formations (e.g. "4 1 5" style descriptors) — structure
-  noted, full decode pending (needed only for tactics UI).
+- FORM.DAT: **18 formations × 22 phase sets × 11 (x,y)** (484 B/formation, 22 B/set).
+  ✅ SOLVED. The 22 sets are NOT ball-zones — the EXE labels them as match
+  *phases*: "Attacking/Defending Positions in Open Play", "Positions When
+  Defending {Top Corner, Bottom Corner, A Goal Kick, Kick Off, A Penalty}", etc.
+  **Set 0 is a set-piece** (players bunched forward) — taking it as the base shape
+  produced the unplayable "4-6" lineups. **Set 13 = "Defending Positions in Open
+  Play"** is the canonical formation (GK deepest & central, clean back line, a real
+  4-4-2/4-3-3 shape). Verified by ASCII-rendering all 18 formations across every
+  set. `tools/stage_phase3_ui.py:export_formations` ships set 13, normalised per
+  formation. Players are placed onto slots by their real attributes (keeper → GK
+  slot, forwards → front), NOT by record order — see `ui/RoomHost.kt:assignLineup`.
+- *.FOR: 18 per-career saved formations (1522 B each) — not needed; FORM.DAT covers
+  the base shapes.
 
 ### Other data files — 🔴 to decode
-COACH.DAT (4680), FORM.DAT (8712, formations), ADVERT.DAT (6200),
-*.FOR (1522 ea, 18 saved formations), SECTOR.MAP / STADIUMS.MAP,
+COACH.DAT (4680), ADVERT.DAT (6200), SECTOR.MAP / STADIUMS.MAP,
 GAME.TXT (108k, in-game text/commentary strings), MANAGERS.NAM.
 Save set: USME0001.{SVE 1.3M, MCH, PHS, THS} = English career snapshot
 (real English names: Darren Royle, Michael Carmody…).

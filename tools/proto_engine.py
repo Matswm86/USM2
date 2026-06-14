@@ -147,6 +147,128 @@ def mean_attrs(p):
     return sum(sk) / len(sk) if sk else 0.0
 
 
+# ---- 4. season rollover (promotion/relegation) — mirrors Career.rolloverSeason
+def club_strength_triple(squad):
+    """(overall, attack, defence) — mirrors engine/Strength.kt over real skills."""
+    if not squad:
+        return (35.0, 35.0, 35.0)
+    def gk(p): return p["skills"][0]
+    def df(p): return p["skills"][1]
+    def at(p): return p["skills"][3]
+    def fit(p): return (p["skills"][4] + p["skills"][6] + p["skills"][9]) / 3
+    def rating(p):
+        if gk(p) > 55:
+            return gk(p) * 0.6 + fit(p) * 0.2 + df(p) * 0.2
+        return (at(p) + df(p) + p["skills"][7] + p["skills"][2] + fit(p)) / 5
+    overall = statistics.mean(sorted((rating(p) for p in squad), reverse=True)[:11])
+    attack = statistics.mean(sorted((at(p) for p in squad), reverse=True)[:5])
+    backs = sorted((df(p) for p in squad), reverse=True)[:4]
+    keeper = max((gk(p) for p in squad), default=50)
+    defence = 0.75 * statistics.mean(backs) + 0.25 * keeper
+    return (overall, attack, defence)
+
+
+def expected_goals_ad(attack, opp_def, gap):
+    return max(0.05, 1.10 * math.exp(0.8 * ((attack - opp_def - gap) / 8.0)))
+
+
+def sim_ad(ha, hd, aa, ad, gap, seed):
+    rng = Rng(seed)
+    hg = poisson(rng, expected_goals_ad(ha, ad, gap) + 0.28)
+    ag = poisson(rng, expected_goals_ad(aa, hd, gap))
+    return hg, ag
+
+
+def simulate_tier_order(club_ids, strengths, seed):
+    """Deterministic full-season order of a tier from its frozen strengths."""
+    n = len(club_ids)
+    if n < 2:
+        return list(club_ids)
+    st = [strengths.get(c, (35.0, 35.0, 35.0)) for c in club_ids]
+    attack = [s[1] for s in st]
+    defence = [s[2] for s in st]
+    gap = statistics.mean(attack) - statistics.mean(defence)
+    results = []
+    for ri, rnd in enumerate(double_round_robin(n)):
+        for (h, a) in rnd:
+            fseed = seed * 1_000_003 + ri * 9176 + h * 131 + a
+            hg, ag = sim_ad(attack[h], defence[h], attack[a], defence[a], gap, fseed)
+            results.append((h, a, hg, ag))
+    order, _ = standings(list(range(n)), results)
+    return [club_ids[i] for i in order]
+
+
+def rollover(pyramid, strengths, promo_slots, season, season_seed):
+    n = len(pyramid)
+    def rseed(salt):
+        return (season_seed * 1_000_003) ^ (salt * 0x100000001B3) ^ (season << 21)
+    ordered = [simulate_tier_order(t["clubIds"], strengths, rseed(t["division"])) for t in pyramid]
+    promoted = [[] for _ in range(n)]
+    relegated = [[] for _ in range(n)]
+    for t in range(n):
+        order = ordered[t]
+        k = min(promo_slots, len(order) // 2)
+        if t > 0 and k > 0:
+            promoted[t] = order[:k]
+        if t < n - 1 and k > 0:
+            relegated[t] = order[-k:]
+    new = []
+    for t in range(n):
+        moved = set(promoted[t]) | set(relegated[t])
+        stayed = [c for c in ordered[t] if c not in moved]
+        came_up = promoted[t + 1] if t < n - 1 else []
+        came_down = relegated[t - 1] if t > 0 else []
+        new.append({"division": pyramid[t]["division"],
+                    "clubIds": sorted(stayed + came_up + came_down)})
+    return new, ordered, promoted, relegated
+
+
+def validate_rollover(clubs, players):
+    by_club = defaultdict(list)
+    for p in players:
+        if p.get("club"):
+            by_club[p["club"]].append(p)
+    groups = defaultdict(list)
+    for c in clubs:
+        if c["group"] == "England":
+            groups[c["division"]].append(c)
+    tiers = []
+    for div in sorted(groups):
+        cl = groups[div]
+        if 2 <= len(cl) <= 30:
+            tiers.append({"division": div, "clubIds": sorted(x["id"] for x in cl)})
+    strengths = {}
+    for div_clubs in groups.values():
+        for c in div_clubs:
+            strengths[c["id"]] = club_strength_triple(by_club.get(c["id"], []))
+
+    promo = 3
+    season, seed = 1, 999
+    sizes0 = [len(t["clubIds"]) for t in tiers]
+    all0 = set(c for t in tiers for c in t["clubIds"])
+    print(f"\n== rollover: England pyramid {len(tiers)} tiers, sizes {sizes0} ==")
+    pyr = tiers
+    for _ in range(6):
+        new, ordered, promoted, relegated = rollover(pyr, strengths, promo, season, seed)
+        assert [len(t["clubIds"]) for t in new] == sizes0, "tier size changed"
+        flat = [c for t in new for c in t["clubIds"]]
+        assert len(flat) == len(set(flat)), "a club lands in two tiers"
+        assert set(flat) == all0, "club set not conserved"
+        for t in range(len(pyr) - 1):
+            k = min(promo, len(ordered[t]) // 2)
+            for c in ordered[t][-k:]:
+                assert c in new[t + 1]["clubIds"], "relegated club missing from tier below"
+            for c in ordered[t + 1][:k]:
+                assert c in new[t]["clubIds"], "promoted club missing from tier above"
+        new2, *_ = rollover(pyr, strengths, promo, season, seed)
+        assert [t["clubIds"] for t in new2] == [t["clubIds"] for t in new], "rollover not deterministic"
+        pyr = new
+        season += 1
+    # show the top tier champion drift over the 6 rolled seasons (sanity, not asserted)
+    print("   sizes conserved · clubs conserved · promo/relegation exact · deterministic")
+    print(f"   promo_slots={promo}; ran 6 rollovers without losing or duplicating a club")
+
+
 def main():
     clubs = json.loads((ASSETS / "clubs.json").read_text())
     players = json.loads((ASSETS / "players.json").read_text())
@@ -236,6 +358,7 @@ def main():
         gd = r["gf"] - r["ga"]
         print(f"{rank:>2} {epl[ti]['name']:22} {r['p']:>2} {r['w']:>2} {r['d']:>2} "
               f"{r['l']:>2} {r['gf']:>3} {r['ga']:>3} {gd:>3} {r['pts']:>3}")
+    validate_rollover(clubs, players)
     print("\nALL CHECKS PASSED")
 
 

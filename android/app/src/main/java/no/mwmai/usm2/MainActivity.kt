@@ -114,6 +114,7 @@ private fun Nav(data: GameData, vm: GameViewModel) {
                     data,
                     c,
                     onPlayMatch = { vm.playNextRound() },
+                    onRollover = { vm.rolloverSeason() },
                     onExit = { nav.popBackStack("start", inclusive = false) },
                 )
             }

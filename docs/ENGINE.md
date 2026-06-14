@@ -22,8 +22,23 @@ matchday, so a career survives app restarts (resume from the office).
 | `Strength.kt` | Club strength = best-XI mean of `Player.rating` (0-99). **Refinement hook:** splits into attack/defence lines once the attribute-column names are recovered from the EXE, without changing the engine interface. |
 | `Sim.kt` | Strength differential → expected goals → seeded Poisson scoreline, with a fixed home bump. Tuned to ~2.9 g/match, ~46/27/27 home/draw/away over a season. |
 | `Standings.kt` | League table from played fixtures: 3/1/0, ordered by points, then GD, then GF. |
-| `Career.kt` | Serializable, self-contained career state (`Fixture` + `Career`). Strengths are frozen at season start, so advancing needs no `GameData`. All mutation returns a new `Career`. |
-| `CareerFactory.kt` | Builds a `Career` from `GameData` + a chosen club. Gates "manageable" to divisions of 2-30 clubs (admits England 20-24 / France 18-22 / Germany 18; excludes the 112-club International transfer pool). |
+| `Career.kt` | Serializable, self-contained career state (`Fixture`, `ClubStrength`, `Tier`, `Career`). Strengths are frozen at career start and the whole group **pyramid** travels in the save, so advancing a season AND rolling it over needs no `GameData`. All mutation returns a new `Career`. |
+| `CareerFactory.kt` | Builds a `Career` from `GameData` + a chosen club. Gates "manageable" to divisions of 2-30 clubs (admits England 20-24 / France 18-22 / Germany 18; excludes the 112-club International transfer pool). Captures the group's full pyramid + every club's frozen strength for rollover. |
+
+## Season rollover (promotion / relegation)
+
+When the managed season completes, **Start Season N+1** (`Career.rolloverSeason`)
+promotes/relegates across the whole group pyramid and generates a fresh season:
+
+- The managed tier's outcome uses the **real played table**; every other tier is
+  settled by a deterministic full-season simulation from the frozen strengths.
+- Top `promotionSlots` of each tier go up, bottom `promotionSlots` go down,
+  computed simultaneously off the pre-move orders, so clubs are conserved.
+- The managed club's new tier becomes next season's active division; a new fixture
+  list + a centred `leagueGap` are rebuilt from the frozen strengths; `season++`.
+
+A no-op before the season is complete or for pre-rollover saves (empty pyramid).
+The league table marks promotion (green) and relegation (red) zones live.
 
 ## Validation (`tools/proto_engine.py`)
 
@@ -35,8 +50,9 @@ Liverpool top for 96/97).
 
 ## Known limits / next
 
-- Single division, single season (no promotion/relegation, no rollover yet).
-- No transfers-with-budget, finances, training, or board confidence yet.
-- Strength is a single overall until the EXE attribute-column names land; the
-  sim has no lineups/injuries/form. These are additive — the `Strength.of`
-  internals change, the engine interface does not.
+- No transfers-with-budget or real finances yet (the bank shows squad value
+  derived from real attributes; the seed DB ships no balance).
+- The match is simulated, not yet viewed on MATCHSCR + PITCH.SPR sprites.
+- No injuries / suspensions / training / board confidence.
+- Lineups are auto-picked by attribute (`assignLineup`): there is no manual
+  team selection or per-player substitution UI.

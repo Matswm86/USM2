@@ -23,9 +23,32 @@ object CareerFactory {
 
     fun start(data: GameData, clubId: String, seed: Long): Career? {
         val club = data.clubsById[clubId] ?: return null
-        val division = divisionOf(data, club)
-        if (division.size < 2 || division.size > MAX_DIVISION_SIZE) return null
-        val clubIds = division.map { it.id }
+        val active = divisionOf(data, club)
+        if (active.size < 2 || active.size > MAX_DIVISION_SIZE) return null
+
+        // The managed group's whole pyramid: every manageable division in the
+        // group, top tier (lowest division byte) first. The 112-club Europe pool
+        // is excluded by the size gate, so only the real ladder remains.
+        val tiers = data.clubs
+            .filter { it.group == club.group }
+            .groupBy { it.division }
+            .filterValues { it.size in 2..MAX_DIVISION_SIZE }
+            .toSortedMap()
+            .map { (_, clubsInDiv) ->
+                val ordered = clubsInDiv.sortedBy { it.name }
+                Tier(ordered.first().division, ordered.first().divisionName, ordered.map { it.id })
+            }
+
+        // Freeze every pyramid club's strengths once (no aging/transfers yet).
+        val clubStrengths = tiers.flatMap { it.clubIds }.associateWith { id ->
+            val squad = data.squad(id)
+            ClubStrength(Strength.of(squad), Strength.attack(squad), Strength.defence(squad))
+        }
+        val smallestTier = tiers.minOfOrNull { it.clubIds.size } ?: active.size
+        val promotionSlots = maxOf(1, minOf(3, smallestTier / 4))
+
+        // Active-division working set (drives the current season + all the UI).
+        val clubIds = active.map { it.id }
         val squads = clubIds.map { data.squad(it) }
         val strengths = squads.map { Strength.of(it) }
         val attack = squads.map { Strength.attack(it) }
@@ -44,6 +67,9 @@ object CareerFactory {
             attackStrengths = attack,
             defenceStrengths = defence,
             leagueGap = leagueGap,
+            clubStrengths = clubStrengths,
+            pyramid = tiers,
+            promotionSlots = promotionSlots,
         )
     }
 }

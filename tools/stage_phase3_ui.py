@@ -64,26 +64,35 @@ def crop_scenes():
 
 
 def export_formations():
-    """FORM.DAT = 18 formations x 22 ball-zone sets x 11 (x,y). The first set of
-    each formation is the static base shape used by the line-up screen."""
+    """FORM.DAT = 18 formations x 22 PHASE sets x 11 (x,y). The 22 sets are NOT
+    ball-zones — the EXE labels them as match phases ("Attacking/Defending
+    Positions in Open Play", plus corners / goal-kicks / kick-off / penalties).
+
+    Set 0 is a SET-PIECE phase (players bunched forward) -> the old "base = set 0"
+    gave the unplayable "4-6" shapes. SET_OPEN_PLAY (13, "Defending Positions in
+    Open Play") is the canonical formation: GK deepest and central, a clean back
+    line, midfield and attack. Verified by ASCII-rendering all 18 formations
+    across every set (see docs/FORMATS.md). Each formation is normalised on its
+    OWN bounding box so it fills the pitch; y grows toward the GK (bottom)."""
     data = (ORIG / "FORM.DAT").read_bytes()
-    STRIDE = 484          # bytes per formation (22 sets x 22 bytes)
+    STRIDE = 484          # bytes per formation (22 phase sets x 22 bytes)
+    SET_OPEN_PLAY = 13
     n_form = len(data) // STRIDE
-    raw = []
+    pad = 0.08
+    forms = []
     for f in range(n_form):
-        base = data[f * STRIDE: f * STRIDE + 22]
-        raw.append([(base[2 * i], base[2 * i + 1]) for i in range(11)])
-    # Normalise on a shared grid so every formation sits consistently on the pitch.
-    xs = [x for fm in raw for x, _ in fm]
-    ys = [y for fm in raw for _, y in fm]
-    xmin, xmax = min(xs), max(xs)
-    ymin, ymax = min(ys), max(ys)
-    pad = 0.06
-    def nx(x): return round(pad + (1 - 2 * pad) * (x - xmin) / (xmax - xmin), 4)
-    def ny(y): return round(pad + (1 - 2 * pad) * (y - ymin) / (ymax - ymin), 4)
-    forms = [[[nx(x), ny(y)] for x, y in fm] for fm in raw]
+        off = f * STRIDE + SET_OPEN_PLAY * 22
+        seg = data[off: off + 22]
+        pts = [(seg[2 * i], seg[2 * i + 1]) for i in range(11)]
+        xs = [x for x, _ in pts]
+        ys = [y for _, y in pts]
+        xmin, xmax = min(xs), max(xs)
+        ymin, ymax = min(ys), max(ys)
+        def nx(x, lo=xmin, hi=xmax): return round(pad + (1 - 2 * pad) * (x - lo) / (hi - lo or 1), 4)
+        def ny(y, lo=ymin, hi=ymax): return round(pad + (1 - 2 * pad) * (y - lo) / (hi - lo or 1), 4)
+        forms.append([[nx(x), ny(y)] for x, y in pts])
     (ASSETS / "data" / "formations.json").write_text(json.dumps(forms))
-    return n_form, (xmin, xmax, ymin, ymax)
+    return n_form, SET_OPEN_PLAY
 
 
 def verify():
@@ -108,9 +117,9 @@ def main():
         return
     ni = crop_icons()
     ns = crop_scenes()
-    nf, bounds = export_formations()
+    nf, open_play_set = export_formations()
     verify()
-    print(f"icons={ni}  scenes={ns}  formations={nf}  form_bounds(x/y)={bounds}")
+    print(f"icons={ni}  scenes={ns}  formations={nf}  open_play_set={open_play_set}")
 
 
 if __name__ == "__main__":

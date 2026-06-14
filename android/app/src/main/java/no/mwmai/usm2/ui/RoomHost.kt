@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import no.mwmai.usm2.GameData
+import no.mwmai.usm2.Player
 import no.mwmai.usm2.engine.Career
 import no.mwmai.usm2.engine.Fixture
 import no.mwmai.usm2.engine.Standings
@@ -76,7 +77,13 @@ private const val SCENE_W = 640f
 private const val SCENE_H = 437f   // PIC height after the baked toolbar is cropped
 
 @Composable
-fun RoomHost(data: GameData, career: Career, onPlayMatch: () -> Unit, onExit: () -> Unit) {
+fun RoomHost(
+    data: GameData,
+    career: Career,
+    onPlayMatch: () -> Unit,
+    onRollover: () -> Unit,
+    onExit: () -> Unit,
+) {
     var room by remember { mutableStateOf(Room.OFFICE) }
 
     fun nav(icon: Int) {
@@ -89,7 +96,7 @@ fun RoomHost(data: GameData, career: Career, onPlayMatch: () -> Unit, onExit: ()
             14 -> room = Room.TACTICS
             15 -> room = Room.TEAM
             16 -> room = Room.DUGOUT
-            21 -> onPlayMatch()
+            21 -> if (career.seasonComplete) onRollover() else onPlayMatch()
             22 -> onExit()
             else -> {}
         }
@@ -99,8 +106,8 @@ fun RoomHost(data: GameData, career: Career, onPlayMatch: () -> Unit, onExit: ()
         when (room) {
             Room.OFFICE -> SceneArea("img/scene/MANASCR.png", officeObjects { room = it })
             Room.BOARDROOM -> SceneArea("img/scene/CHAIRSCR.png", emptyList())
-            Room.BANK -> SceneArea("img/scene/BANKSCR.png", emptyList())
-            Room.DUGOUT -> SceneArea("img/scene/BENCHSCR.png", emptyList()) { MatchStrip(data, career, onPlayMatch) }
+            Room.BANK -> SceneArea("img/scene/BANKSCR.png", emptyList()) { BankPanel(data, career) }
+            Room.DUGOUT -> SceneArea("img/scene/BENCHSCR.png", emptyList()) { MatchCentre(data, career, onPlayMatch, onRollover) }
             Room.NEWS -> SceneArea("img/scene/NEWS.png", emptyList()) { NewsStrip(data, career) }
             Room.TEAM -> TeamContent(data, career)
             Room.TABLE -> TableContent(data, career)
@@ -191,25 +198,150 @@ private fun officeObjects(go: (Room) -> Unit): List<Hotspot> = listOf(
 
 // ---- bottom strips ---------------------------------------------------------
 
+// The dugout = the match centre: form guide, league position, last/next match,
+// and the advance control (Play Matchday, or Start next Season once one is over).
 @Composable
-private fun MatchStrip(data: GameData, career: Career, onPlayMatch: () -> Unit) {
-    val last = career.lastFixtureForManaged()
-    val next = career.nextFixtureForManaged()
-    Row(
-        Modifier.fillMaxWidth().background(Color(0xDD06140D)).padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Column(Modifier.weight(1f)) {
-            if (last != null) Text("Last: ${resultLine(data, career, last)}", color = Ink, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                if (next != null) "Next: ${resultLine(data, career, next)}" else "Season complete",
-                color = Sub,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        PillButton(if (career.seasonComplete) "Done" else "Play MD ${career.nextRound + 1}", enabled = !career.seasonComplete, onClick = onPlayMatch)
+private fun MatchCentre(data: GameData, career: Career, onPlayMatch: () -> Unit, onRollover: () -> Unit) {
+    val table = remember(career) { Standings.compute(career.clubIds.size, career.fixtures) }
+    val rank = table.indexOfFirst { it.clubIndex == career.managedIndex }.let { if (it < 0) 0 else it + 1 }
+    val played = remember(career) {
+        career.fixtures
+            .filter { it.played && (it.home == career.managedIndex || it.away == career.managedIndex) }
+            .sortedBy { it.round }
     }
+    val form = played.takeLast(5)
+    val last = played.lastOrNull()
+    val next = career.nextFixtureForManaged()
+    Column(
+        Modifier.fillMaxWidth().background(Color(0xE60A1810)).padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Match Centre", color = Gold, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.weight(1f))
+            Text("${ordinal(rank)} of ${career.clubIds.size}", color = Ink, style = MaterialTheme.typography.bodyMedium)
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Form ", color = Sub, style = MaterialTheme.typography.labelMedium)
+            if (form.isEmpty()) {
+                Text("no matches yet", color = Sub, style = MaterialTheme.typography.labelSmall)
+            } else {
+                form.forEach { f ->
+                    val o = managedOutcome(career, f)
+                    val c = when (o) {
+                        'W' -> Color(0xFF2E9E5B); 'L' -> Color(0xFFC0413B); else -> Color(0xFF8A8F45)
+                    }
+                    Box(
+                        Modifier.padding(end = 4.dp).size(20.dp).clip(RoundedCornerShape(4.dp)).background(c),
+                        contentAlignment = Alignment.Center,
+                    ) { Text(o.toString(), color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall) }
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        if (last != null) Text("Last: ${resultLine(data, career, last)}", color = Ink, style = MaterialTheme.typography.bodySmall)
+        Text(
+            if (next != null) "Next: ${resultLine(data, career, next)}  (${if (next.home == career.managedIndex) "Home" else "Away"})"
+            else "Season ${career.season} complete",
+            color = Sub,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.height(8.dp))
+        if (career.seasonComplete) {
+            seasonOutcomeLabel(career)?.let {
+                Text(it, color = Gold, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(6.dp))
+            }
+            if (career.pyramid.isNotEmpty()) {
+                PillButton("Start Season ${career.season + 1}", onClick = onRollover)
+            } else {
+                PillButton("Season over", enabled = false, onClick = {})
+            }
+        } else {
+            PillButton("Play Matchday ${career.nextRound + 1}", onClick = onPlayMatch)
+        }
+    }
+}
+
+/** W/D/L of the managed club in a played fixture. */
+private fun managedOutcome(career: Career, f: Fixture): Char {
+    if (!f.played) return '-'
+    val mineHome = f.home == career.managedIndex
+    val gf = if (mineHome) f.homeGoals else f.awayGoals
+    val ga = if (mineHome) f.awayGoals else f.homeGoals
+    return if (gf > ga) 'W' else if (gf < ga) 'L' else 'D'
+}
+
+/** End-of-season verdict for the managed club, or null mid-season / on old saves. */
+private fun seasonOutcomeLabel(career: Career): String? {
+    if (!career.seasonComplete || career.pyramid.isEmpty()) return null
+    val rank = career.managedFinalRank()
+    val size = career.clubIds.size
+    val champion = rank == 1
+    val promoted = career.hasPromotion && rank <= career.promotionSlots
+    val relegated = career.hasRelegation && rank > size - career.promotionSlots
+    return when {
+        champion && !career.hasPromotion -> "Champions!"
+        champion -> "Champions — promoted!"
+        promoted -> "Promoted (${ordinal(rank)})"
+        relegated -> "Relegated (${ordinal(rank)})"
+        else -> "Finished ${ordinal(rank)}"
+    }
+}
+
+// Bank = the club's finances. USM2 ships NO balance in the seed DB (the stats
+// block is zeroed until a new game initialises it), so these are honest figures
+// derived from the real squad attributes, not invented "decoded" numbers.
+@Composable
+private fun BankPanel(data: GameData, career: Career) {
+    val club = data.clubsById[career.managedClubId]
+    val squad = remember(career.managedClubId) { data.squad(career.managedClubId) }
+    val valueK = remember(career.managedClubId) { squad.sumOf { playerValueK(it) } }
+    val avg = if (squad.isNotEmpty()) squad.map { it.rating }.average().toInt() else 0
+    val prized = squad.maxByOrNull { it.rating }
+    Column(
+        Modifier.fillMaxWidth().background(Color(0xE60A1810)).padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Text("Finances", color = Gold, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(6.dp))
+        FinanceRow("Club", club?.name ?: "-")
+        FinanceRow("Stadium", club?.stadium ?: "-")
+        FinanceRow("Tier", "${career.divisionName} · S${career.season}")
+        FinanceRow("Squad value (est.)", money(valueK))
+        FinanceRow("Squad", "${squad.size} players · avg rating $avg")
+        prized?.let { FinanceRow("Prize asset", "${it.name} (${it.rating}) · ${money(playerValueK(it))}") }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Estimates from real squad ratings; the seed DB carries no balance.",
+            color = Sub,
+            style = MaterialTheme.typography.labelSmall,
+        )
+    }
+}
+
+@Composable
+private fun FinanceRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+        Text(label, color = Sub, modifier = Modifier.width(150.dp), style = MaterialTheme.typography.bodySmall)
+        Text(value, color = Ink, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/** A player's transfer value in £k, from his real overall rating (steep curve). */
+private fun playerValueK(p: Player): Long {
+    val r = p.rating.coerceIn(1, 99) / 100.0
+    return (r * r * r * 14_000).toLong()
+}
+
+private fun money(k: Long): String =
+    if (k >= 1000) "£%.1fM".format(k / 1000.0) else "£${k}k"
+
+private fun ordinal(n: Int): String {
+    if (n <= 0) return "-"
+    val suffix = if (n % 100 in 11..13) "th" else when (n % 10) {
+        1 -> "st"; 2 -> "nd"; 3 -> "rd"; else -> "th"
+    }
+    return "$n$suffix"
 }
 
 @Composable
@@ -253,7 +385,13 @@ private fun TeamContent(data: GameData, career: Career) {
 @Composable
 private fun TableContent(data: GameData, career: Career) {
     val table = remember(career) { Standings.compute(career.clubIds.size, career.fixtures) }
+    val n = table.size
+    val promoCut = if (career.hasPromotion) career.promotionSlots else 0
+    val relegCut = if (career.hasRelegation) career.promotionSlots else 0
     Column(Modifier.fillMaxSize().padding(8.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+            Text("${career.divisionName} · S${career.season}", color = Gold, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+        }
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
             Text("#", color = Sub, modifier = Modifier.width(28.dp), style = MaterialTheme.typography.labelSmall)
             Text("Club", color = Sub, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
@@ -264,12 +402,20 @@ private fun TableContent(data: GameData, career: Career) {
         LazyColumn(Modifier.fillMaxSize()) {
             itemsIndexed(table, key = { _, r -> r.clubIndex }) { i, r ->
                 val mine = r.clubIndex == career.managedIndex
+                val promo = i < promoCut
+                val releg = i >= n - relegCut
+                val accent = when {
+                    promo -> Color(0xFF2E9E5B)
+                    releg -> Color(0xFFC0413B)
+                    else -> Color.Transparent
+                }
                 Row(
                     Modifier.fillMaxWidth().background(if (mine) Color(0xFF14543A) else Color.Transparent)
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("${i + 1}", color = if (mine) Gold else Sub, modifier = Modifier.width(28.dp), style = MaterialTheme.typography.bodySmall)
+                    Box(Modifier.width(4.dp).height(18.dp).background(accent))
+                    Text("${i + 1}", color = if (mine) Gold else Sub, modifier = Modifier.width(24.dp).padding(start = 4.dp), style = MaterialTheme.typography.bodySmall)
                     Text(clubName(data, career, r.clubIndex), color = Ink, fontWeight = if (mine) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(1f), maxLines = 1, style = MaterialTheme.typography.bodySmall)
                     listOf(r.played, r.won, r.drawn, r.lost, r.goalDifference, r.points).forEachIndexed { idx, v ->
                         Text(
@@ -292,7 +438,11 @@ private fun TableContent(data: GameData, career: Career) {
 private fun PitchLineup(data: GameData, career: Career) {
     val forms = data.formations
     var formIdx by remember { mutableStateOf(0) }
-    val squad = remember(career.managedClubId) { data.squad(career.managedClubId).take(11) }
+    val squad = remember(career.managedClubId) { data.squad(career.managedClubId) }
+    val form = forms.getOrNull(formIdx).orEmpty()
+    val gkSlot = remember(form) { form.indices.maxByOrNull { form[it].getOrElse(1) { 0.0 } } ?: 0 }
+    val depthOrder = remember(form) { form.indices.sortedByDescending { form[it].getOrElse(1) { 0.0 } } }
+    val lineup = remember(career.managedClubId, formIdx, forms) { assignLineup(squad, form) }
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().background(Color(0xFF0B3D24)).padding(horizontal = 12.dp, vertical = 6.dp),
@@ -300,10 +450,13 @@ private fun PitchLineup(data: GameData, career: Career) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text("Tactics", color = Gold, fontWeight = FontWeight.Bold)
+            if (form.isNotEmpty()) {
+                Text(formationLabel(form), color = Ink, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+            }
             Spacer(Modifier.weight(1f))
             if (forms.isNotEmpty()) {
                 PillButton("‹") { formIdx = (formIdx - 1 + forms.size) % forms.size }
-                Text("Formation ${formIdx + 1}/${forms.size}", color = Ink, style = MaterialTheme.typography.bodyMedium)
+                Text("${formIdx + 1}/${forms.size}", color = Ink, style = MaterialTheme.typography.bodyMedium)
                 PillButton("›") { formIdx = (formIdx + 1) % forms.size }
             }
         }
@@ -317,22 +470,74 @@ private fun PitchLineup(data: GameData, career: Career) {
                 drawLine(line, Offset(6f, size.height / 2f), Offset(size.width - 6f, size.height / 2f), strokeWidth = 3f)
                 drawCircle(line, radius = size.height * 0.11f, center = Offset(size.width / 2f, size.height / 2f), style = s)
             }
-            val form = forms.getOrNull(formIdx).orEmpty()
             form.forEachIndexed { i, pos ->
                 if (pos.size >= 2) {
-                    val name = squad.getOrNull(i)?.name?.substringAfterLast(' ') ?: "-"
-                    PlayerChip(i + 1, name, Modifier.offset(x = w * pos[0].toFloat() - 26.dp, y = h * pos[1].toFloat() - 18.dp))
+                    val p = lineup.getOrNull(i)
+                    val name = p?.name?.substringAfterLast(' ') ?: "-"
+                    PlayerChip(
+                        depthOrder.indexOf(i) + 1,
+                        name,
+                        i == gkSlot,
+                        Modifier.offset(x = w * pos[0].toFloat() - 26.dp, y = h * pos[1].toFloat() - 18.dp),
+                    )
                 }
             }
         }
     }
 }
 
+/**
+ * Maps the best available XI onto the formation slots by the players' REAL
+ * attributes (the source data, not slot index): the genuine keeper (top
+ * Goalkeeping) takes the deepest slot, and the rest fill front-to-back by how
+ * attacking they are, so forwards lead the line and defenders sit at the back.
+ */
+private fun assignLineup(squad: List<Player>, form: List<List<Double>>): List<Player?> {
+    val n = form.size
+    if (n == 0 || squad.isEmpty()) return List(n) { null }
+    val gkSlot = form.indices.maxByOrNull { form[it].getOrElse(1) { 0.0 } } ?: 0
+    val keeperIdx = squad.indices.maxByOrNull { squad[it].goalkeeping } ?: 0
+    val outfield = squad.filterIndexed { i, _ -> i != keeperIdx }
+        .sortedByDescending { it.rating }
+        .take(n - 1)
+        .sortedByDescending { it.attacking - it.defending } // most attacking first
+    val slotsFrontToBack = form.indices.filter { it != gkSlot }
+        .sortedBy { form[it].getOrElse(1) { 0.0 } } // lowest y (front) first
+    val out = arrayOfNulls<Player>(n)
+    out[gkSlot] = squad[keeperIdx]
+    slotsFrontToBack.forEachIndexed { i, slot -> out[slot] = outfield.getOrNull(i) }
+    return out.toList()
+}
+
+/** "4-4-2"-style label from the slot depths (outfield bands, back to front). */
+private fun formationLabel(form: List<List<Double>>): String {
+    if (form.size < 11) return ""
+    val gkSlot = form.indices.maxByOrNull { form[it].getOrElse(1) { 0.0 } } ?: 0
+    val ys = form.indices.filter { it != gkSlot }
+        .map { form[it].getOrElse(1) { 0.0 } }
+        .sortedDescending()
+    val bands = mutableListOf<Int>()
+    var count = 1
+    for (i in 1 until ys.size) {
+        if (ys[i - 1] - ys[i] > 0.09) { bands.add(count); count = 1 } else count++
+    }
+    bands.add(count)
+    return bands.joinToString("-")
+}
+
 @Composable
-private fun PlayerChip(number: Int, name: String, modifier: Modifier) {
+private fun PlayerChip(number: Int, name: String, isKeeper: Boolean, modifier: Modifier) {
     Column(modifier.width(52.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(22.dp).clip(CircleShape).background(ShirtRed), contentAlignment = Alignment.Center) {
-            Text("$number", color = Color.White, style = MaterialTheme.typography.labelSmall)
+        Box(
+            Modifier.size(22.dp).clip(CircleShape).background(if (isKeeper) Gold else ShirtRed),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "$number",
+                color = if (isKeeper) Color(0xFF06140D) else Color.White,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.labelSmall,
+            )
         }
         Text(
             name,

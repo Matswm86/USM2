@@ -105,6 +105,15 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         persist(advanced)
     }
 
+    /** Promotes/relegates across the pyramid and starts the next season. */
+    fun rolloverSeason() {
+        val current = _career.value ?: return
+        if (!current.seasonComplete) return
+        val next = current.rolloverSeason()
+        _career.value = next
+        persist(next)
+    }
+
     /** Abandons the current career and deletes the save. */
     fun quitCareer() {
         _career.value = null
