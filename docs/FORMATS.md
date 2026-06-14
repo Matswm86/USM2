@@ -59,26 +59,49 @@ Save set: USME0001.{SVE 1.3M, MCH, PHS, THS} = English career snapshot
 
 ---
 
-## 🟡 Graphics — `PAK2` container header SOLVED, body packer PENDING
+## ✅ Graphics — `PAK2` SOLVED & visually verified (`tools/decode_pic.py`)
 
-`.PIC` = full-screen art. Header:
+Algorithm read directly from the USM2E.EXE disassembly (obj1, vbase 0x10000,
+decompressor at VA `0x9fafc`). It is **NOT LZSS** — it is a simple 2-bit-type
+RLE/literal scheme with no ring buffer. (Earlier "embedded 768-byte palette /
+LZSS ring" notes were wrong inferences that only ever produced noise; the
+`byte[4:7]` field I misread as palette size is the **total file size,
+big-endian** — e.g. TITLE.PIC = 0x00014DA7 = 85415 = its exact size.)
+
 ```
-0   4   "PAK2" magic
-4   2   palette_size (u16 LE)   768 = 256 colours×3 (8-bit RGB, NOT 6-bit VGA);
-                                 0 = use ALL.PAL
-6   N   palette bytes (palette_size)
-6+N ..  packed image body  <-- packer not yet cracked
+Header:
+  0-3   "PAK2" magic
+  4-7   total file size (big-endian u32)
+  8     save1  — palette index emitted by type-01 tokens
+  9     save2  — palette index emitted by type-10 tokens
+  10+   token stream
+
+Each token = 1 code byte: bits[7:6]=type, bits[5:0]=lower6, run = lower6+1 (1..64)
+  11 (0xC0): literal run — next (run) bytes are raw pixel indices   (VA 0x9fba7)
+  10 (0x80): emit save2  (run) times                                (VA 0x9fbb6)
+  01 (0x40): emit save1  (run) times                                (VA 0x9fbce)
+  00 (0x00): read 1 more byte, emit it (run) times                  (VA 0x9fbe2)
+
+Palette: external, ALL.PAL (6144 = 8 × 256-colour VGA palettes, 6-bit ×4 → 8-bit).
+Dimensions: 640×480 (all screens); TV.PIC = 83×932. First frame only (files may
+concatenate further overlay frames after the first image).
 ```
-Body is NOT plain PCX-RLE (over-expands). Likely custom RLE or LZSS — the
-literal `PAK2` tag + decompressor live in USM2?.EXE. Repeating 13-byte control
-groups (`c3 05 08 06 02 04 30 04 1f 06 01 04 10 …`) suggest run/row structure.
-**Next step:** disassemble the PAK2 reader in USM2E.EXE OR brute-force the
-scheme so decoded length = a clean rectangle (test 640×480 SVGA), then validate
-the rendered PNG against the MobyGames reference screenshots.
+
+Verified by **rendering and eye** (the real oracle): TITLE = the globe
+"ULTIMATE SOCCER MANAGER" logo; MAINSCR = office toolbar + desk; BANKSCR =
+photographic bank-manager scene, crisp. **Lesson recorded:** the vertical-
+coherence oracle (`vscore`) only works on flat graphics (TITLE/TV ≈ 0.80);
+photographic/dithered screens score ~0.31–0.38 *when perfectly decoded*, so the
+`>0.6` threshold was a bad gate — visual inspection is the correctness check.
 
 PIC inventory: TITLE, START, MAINSCR (office), MANASCR (manager), BANKSCR (bank),
 CHAIRSCR (chairman), BENCHSCR (dugout), NEWS, TV, MATCH{SCR,BAR,ICE,MUD,WET}
-(pitch states).
+(pitch states). All 14 decode → `decoded/pics/*.png`.
+
+**Open polish:** per-screen palette selection — decoder uses ALL.PAL set 0 for
+all; MAINSCR/BANKSCR look correct, but TITLE's globe has colour speckle that may
+mean some screens use a different one of the 8 palette sets (the game switches
+palettes at load). Refine by testing palette index 0–7 per screen.
 
 ## 🔴 Other graphics
 - ALL.PAL — 6144 bytes = 8 × 256-colour palettes (0–63 VGA), shared palettes.
