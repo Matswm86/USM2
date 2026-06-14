@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -88,51 +89,53 @@ fun ErrorScreen(message: String) {
 
 @Composable
 fun OfficeScreen(data: GameData, onSquads: () -> Unit, onTransfers: () -> Unit) {
-    // Home hero = the real decoded TITLE splash (ALL.PAL set 6: blue football +
-    // red "SOCCER" wordmark). Shown Fit on black so the whole globe is visible
-    // (the art's own margins are black, so the letterbox is seamless). Falls back
-    // to a themed text header if the asset is missing. The office room itself
-    // (MAINSCR) needs the sprite-overlay pipeline, so it is not used yet.
-    val title = rememberAssetImage("img/TITLE.png")
-    Column(Modifier.fillMaxSize().background(Bg)) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(230.dp)
-                .background(Color.Black),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (title != null) {
-                Image(
-                    bitmap = title,
-                    contentDescription = "Ultimate Soccer Manager 2",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit,
-                )
-            } else {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("⚽", style = MaterialTheme.typography.displayMedium)
-                    Spacer(Modifier.height(6.dp))
-                    Text("ULTIMATE", color = Ink, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-                    Text(
-                        "SOCCER MANAGER 2",
-                        color = Color(0xFF7FE0A6),
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.headlineSmall,
-                    )
-                }
-            }
+    // Home = the real manager's office (MANASCR.PIC, ALL.PAL set 0): the desk with
+    // a window onto the stadium, the original baked-in toolbar across the top.
+    // Shown full-bleed (Crop centres on the desk + window), with a bottom scrim so
+    // the wordmark and menu stay legible over the art. This supersedes the earlier
+    // letterboxed TITLE splash (the office is finished art, not a bare texture as
+    // once thought; TITLE.png is kept as an asset for a future title screen).
+    // Falls back to the themed colour + text header if the asset is missing.
+    val office = rememberAssetImage("img/MANASCR.png")
+    Box(Modifier.fillMaxSize().background(Bg)) {
+        if (office != null) {
+            Image(
+                bitmap = office,
+                contentDescription = "Manager's office",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
         }
-        Spacer(Modifier.height(22.dp))
-        Text(
-            "${data.clubs.size} clubs · ${data.players.size} players · 1996/97 season",
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-            color = Sub,
-            style = MaterialTheme.typography.bodyMedium,
+        // Bottom-weighted scrim: art stays vivid up top, text reads at the bottom.
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    0.0f to Color.Transparent,
+                    0.45f to Color(0x66041A11),
+                    1.0f to Color(0xF0041A11),
+                ),
+            ),
         )
-        Spacer(Modifier.height(22.dp))
-        OfficeButton("Squads & Tables", onSquads)
-        OfficeButton("Transfer Market", onTransfers)
+        Column(
+            Modifier.fillMaxSize().padding(20.dp),
+            verticalArrangement = Arrangement.Bottom,
+        ) {
+            Text(
+                "ULTIMATE SOCCER MANAGER 2",
+                color = Ink,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "${data.clubs.size} clubs · ${data.players.size} players · 1996/97 season",
+                color = Sub,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(18.dp))
+            OfficeButton("Squads & Tables", onSquads)
+            OfficeButton("Transfer Market", onTransfers)
+        }
     }
 }
 
@@ -140,7 +143,7 @@ fun OfficeScreen(data: GameData, onSquads: () -> Unit, onTransfers: () -> Unit) 
 private fun OfficeButton(label: String, onClick: () -> Unit) {
     Button(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp).height(54.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).height(54.dp),
         colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Ink),
         shape = RoundedCornerShape(10.dp),
     ) {
