@@ -27,12 +27,14 @@ English seat is player-controlled.
 
 - **Playable**: the **English** pyramid only (manage an English club; Premier
   League [division byte `0`, 20 clubs] down through the lower divisions).
-- **Full database loaded**: France + Germany clubs and players exist in-world
-  so you can:
-  - **buy players from other leagues** (transfer market spans all DBs + the
-    foreign "Euro" player pool), and
-  - **play European competition** — your English club is drawn against
-    continental clubs (French/German top tiers).
+- **Full database loaded**: the English DB already includes **112 European
+  clubs** (division byte `255`) with real squads — Holland (Ajax, PSV, Feyenoord)
+  plus Juventus, Atlético, Porto, Rangers, Dortmund, etc. — and the separate
+  France (190) + Germany (220) pyramids add further depth. So you can:
+  - **buy players from other leagues** (transfer market spans every loaded DB:
+    Dutch/Italian/Spanish/French/German + the foreign "Euro" pool), and
+  - **play European competition** — your English club is drawn against the
+    continental clubs.
 - Leagues not in the original files (Italy, Spain, …) need non-original data and
   are out of scope unless a licensed/community dataset is supplied.
 

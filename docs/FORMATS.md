@@ -29,6 +29,15 @@ verified real (Auxerre → Guy Roux, Bordeaux → Parc Lescure). German set uses
 deliberately altered names (Bayern Monchen, 1.FC Koln) exactly as the original
 shipped — a 1990s licensing workaround, preserved as-is.
 
+**Division byte = stats_raw[7] (file offset 87).** For the English DB:
+`0`=Premier (20), `1`=Div1 (24), `2`=Div2 (24), `3`=Div3 (24), `4`=Conf (22)
+→ 114 English clubs (the playable pyramid); `255`=112 **European clubs**
+(Ajax, PSV Eindhoven, Feyenoord, Juventus, Atlético Madrid, FC Porto, Rangers,
+B. Dortmund, Auxerre, Rosenborg …) used for the foreign transfer market and
+European competition. Their squads carry real names (Kluivert, Overmars, Davids,
+Seedorf, Cocu, Reiziger, Bergkamp, Zidane, Batistuta, Maldini, Raúl); only 28 of
+4288 records in PLAYERN are placeholders.
+
 ### PLAYER{F,G,N}.DAT — 144-byte records
 | offset | size | field |
 |--------|------|-------|
