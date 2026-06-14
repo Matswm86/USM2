@@ -14,7 +14,7 @@ stadiums) and screen artwork, decoded from the original files.
 
 [![Build APK](https://github.com/Matswm86/USM2/actions/workflows/build-android.yml/badge.svg)](https://github.com/Matswm86/USM2/actions/workflows/build-android.yml)
 
-**[⬇ Download the latest APK](https://github.com/Matswm86/USM2/releases/latest/download/usm2.apk)**
+**[⬇ Download the latest APK](https://github.com/Matswm86/USM2/releases/download/latest/usm2.apk)**
 
 Sideload it on Android 8.0+ (enable "install unknown apps"). It is debug-signed,
 so if you are updating over an older build with a different signature, uninstall
