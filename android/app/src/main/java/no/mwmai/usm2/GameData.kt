@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import no.mwmai.usm2.engine.Career
+import no.mwmai.usm2.engine.CareerFactory
+import java.io.File
 
 /** Reads the staged JSON bundle out of the APK's assets directory. */
 object GameRepository {
@@ -26,6 +29,27 @@ object GameRepository {
     }
 }
 
+/** Persists the in-progress career to the app's private storage as JSON. Uses
+ * the explicit-serializer [Json] member forms (no reified-extension import). */
+object CareerStore {
+    private val json = Json { ignoreUnknownKeys = true }
+    private fun file(app: Application) = File(app.filesDir, "career.json")
+
+    fun load(app: Application): Career? = runCatching {
+        file(app).takeIf { it.exists() }?.readText()?.let {
+            json.decodeFromString(Career.serializer(), it)
+        }
+    }.getOrNull()
+
+    fun save(app: Application, career: Career) {
+        runCatching { file(app).writeText(json.encodeToString(Career.serializer(), career)) }
+    }
+
+    fun clear(app: Application) {
+        runCatching { file(app).delete() }
+    }
+}
+
 sealed interface LoadState {
     data object Loading : LoadState
     data class Ready(val data: GameData) : LoadState
@@ -36,12 +60,51 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow<LoadState>(LoadState.Loading)
     val state: StateFlow<LoadState> = _state.asStateFlow()
 
+    private val _career = MutableStateFlow<Career?>(null)
+    /** The active management career, or null when none is in progress. */
+    val career: StateFlow<Career?> = _career.asStateFlow()
+
     init {
         viewModelScope.launch {
-            _state.value = withContext(Dispatchers.IO) {
-                runCatching { GameRepository.load(getApplication()) }
-                    .fold({ LoadState.Ready(it) }, { LoadState.Failed(it.message ?: "load error") })
+            val app = getApplication<Application>()
+            val loaded = withContext(Dispatchers.IO) {
+                val data = runCatching { GameRepository.load(app) }
+                val saved = data.getOrNull()?.let { CareerStore.load(app) }
+                data to saved
             }
+            _state.value = loaded.first
+                .fold({ LoadState.Ready(it) }, { LoadState.Failed(it.message ?: "load error") })
+            _career.value = loaded.second
         }
+    }
+
+    private fun readyData(): GameData? = (_state.value as? LoadState.Ready)?.data
+
+    /** Begins a new career managing [clubId]; replaces any existing one. */
+    fun startCareer(clubId: String) {
+        val data = readyData() ?: return
+        val seed = System.nanoTime()
+        val career = CareerFactory.start(data, clubId, seed) ?: return
+        _career.value = career
+        persist(career)
+    }
+
+    /** Simulates the next matchday across the whole division. */
+    fun playNextRound() {
+        val current = _career.value ?: return
+        if (current.seasonComplete) return
+        val advanced = current.playNextRound()
+        _career.value = advanced
+        persist(advanced)
+    }
+
+    /** Abandons the current career and deletes the save. */
+    fun quitCareer() {
+        _career.value = null
+        CareerStore.clear(getApplication())
+    }
+
+    private fun persist(career: Career) {
+        viewModelScope.launch(Dispatchers.IO) { CareerStore.save(getApplication(), career) }
     }
 }

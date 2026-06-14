@@ -88,7 +88,13 @@ fun ErrorScreen(message: String) {
 }
 
 @Composable
-fun OfficeScreen(data: GameData, onSquads: () -> Unit, onTransfers: () -> Unit) {
+fun OfficeScreen(
+    data: GameData,
+    careerClub: String?,
+    onCareer: () -> Unit,
+    onSquads: () -> Unit,
+    onTransfers: () -> Unit,
+) {
     // Home = the real manager's office (MANASCR.PIC, ALL.PAL set 0): the desk with
     // a window onto the stadium, the original baked-in toolbar across the top.
     // Shown full-bleed (Crop centres on the desk + window), with a bottom scrim so
@@ -133,21 +139,39 @@ fun OfficeScreen(data: GameData, onSquads: () -> Unit, onTransfers: () -> Unit) 
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(18.dp))
+            if (careerClub != null) {
+                OfficeButton("Resume career · $careerClub", onCareer, accent = true)
+            }
             OfficeButton("Squads & Tables", onSquads)
             OfficeButton("Transfer Market", onTransfers)
+            if (careerClub == null) {
+                Text(
+                    "Open a club to take charge and start a season.",
+                    color = Sub,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun OfficeButton(label: String, onClick: () -> Unit) {
+private fun OfficeButton(label: String, onClick: () -> Unit, accent: Boolean = false) {
     Button(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).height(54.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Ink),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (accent) Color(0xFFE7C84A) else Green,
+            contentColor = if (accent) Bg else Ink,
+        ),
         shape = RoundedCornerShape(10.dp),
     ) {
-        Text(label, style = MaterialTheme.typography.titleMedium)
+        Text(
+            label,
+            fontWeight = if (accent) FontWeight.Bold else FontWeight.Normal,
+            style = MaterialTheme.typography.titleMedium,
+        )
     }
 }
 
@@ -188,7 +212,15 @@ fun GroupScreen(data: GameData, group: String, onClub: (String) -> Unit, onBack:
 }
 
 @Composable
-fun ClubScreen(data: GameData, clubId: String, onPlayer: (Int) -> Unit, onBack: () -> Unit) {
+fun ClubScreen(
+    data: GameData,
+    clubId: String,
+    manageable: Boolean,
+    isManaged: Boolean,
+    onTakeCharge: () -> Unit,
+    onPlayer: (Int) -> Unit,
+    onBack: () -> Unit,
+) {
     val club: Club? = data.clubsById[clubId]
     val squad = remember(clubId) {
         data.playersIndexed.filter { it.value.club == clubId }.sortedByDescending { it.value.rating }
@@ -203,6 +235,26 @@ fun ClubScreen(data: GameData, clubId: String, onPlayer: (Int) -> Unit, onBack: 
                         color = Sub,
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                }
+            }
+            if (manageable) {
+                item {
+                    Button(
+                        onClick = onTakeCharge,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(50.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFE7C84A),
+                            contentColor = Bg,
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text(
+                            if (isManaged) "Open career" else "Take charge of ${club?.name.orEmpty()}",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
                 }
             }
             items(squad, key = { it.index }) { (idx, p) ->
