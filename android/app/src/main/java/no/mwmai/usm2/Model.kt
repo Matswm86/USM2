@@ -50,6 +50,8 @@ data class Player(
 class GameData(
     val clubs: List<Club>,
     val players: List<Player>,
+    /** 18 real formations from FORM.DAT: each = 11 [x,y] pairs, normalised [0,1]. */
+    val formations: List<List<List<Double>>> = emptyList(),
 ) {
     val clubsById: Map<String, Club> = clubs.associateBy { it.id }
 

@@ -25,7 +25,14 @@ object GameRepository {
         val players = app.assets.open("data/players.json").use {
             json.decodeFromString<List<Player>>(it.readBytes().decodeToString())
         }
-        return GameData(clubs, players)
+        // The 18 real formations (base shape) decoded from FORM.DAT: each is 11
+        // [x, y] pairs normalised to [0,1] on the pitch (GK ~bottom, attack ~top).
+        val formations = runCatching {
+            app.assets.open("data/formations.json").use {
+                json.decodeFromString<List<List<List<Double>>>>(it.readBytes().decodeToString())
+            }
+        }.getOrDefault(emptyList())
+        return GameData(clubs, players, formations)
     }
 }
 

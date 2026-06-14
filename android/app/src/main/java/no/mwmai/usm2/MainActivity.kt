@@ -21,17 +21,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import no.mwmai.usm2.engine.CareerFactory
-import no.mwmai.usm2.ui.CareerScreen
 import no.mwmai.usm2.ui.ClubScreen
 import no.mwmai.usm2.ui.ErrorScreen
-import no.mwmai.usm2.ui.FixturesScreen
 import no.mwmai.usm2.ui.GroupScreen
 import no.mwmai.usm2.ui.GroupsScreen
 import no.mwmai.usm2.ui.LoadingScreen
-import no.mwmai.usm2.ui.OfficeScreen
 import no.mwmai.usm2.ui.PlayerScreen
-import no.mwmai.usm2.ui.TableScreen
-import no.mwmai.usm2.ui.TransfersScreen
+import no.mwmai.usm2.ui.RoomHost
+import no.mwmai.usm2.ui.StartScreen
 
 private val UsmColors = darkColorScheme(
     primary = Color(0xFF4CAF7D),
@@ -65,14 +62,13 @@ private fun App(vm: GameViewModel = viewModel()) {
 private fun Nav(data: GameData, vm: GameViewModel) {
     val nav = rememberNavController()
     val career by vm.career.collectAsStateWithLifecycle()
-    NavHost(nav, startDestination = "office") {
-        composable("office") {
-            OfficeScreen(
+    NavHost(nav, startDestination = "start") {
+        composable("start") {
+            StartScreen(
                 data,
                 careerClub = career?.let { data.clubsById[it.managedClubId]?.name },
-                onCareer = { nav.navigate("career") },
-                onSquads = { nav.navigate("groups") },
-                onTransfers = { nav.navigate("transfers") },
+                onNew = { nav.navigate("groups") },
+                onContinue = { nav.navigate("game") },
             )
         }
         composable("groups") {
@@ -103,44 +99,24 @@ private fun Nav(data: GameData, vm: GameViewModel) {
                 isManaged = career?.managedClubId == clubId,
                 onTakeCharge = {
                     if (career?.managedClubId != clubId) vm.startCareer(clubId)
-                    nav.navigate("career") { popUpTo("office") }
+                    nav.navigate("game") { popUpTo("start") }
                 },
                 onPlayer = { nav.navigate("player/$it") },
                 onBack = { nav.popBackStack() },
             )
         }
-        composable("career") {
+        composable("game") {
             val c = career
             if (c == null) {
-                LaunchedEffect(Unit) { nav.popBackStack("office", inclusive = false) }
+                LaunchedEffect(Unit) { nav.popBackStack("start", inclusive = false) }
             } else {
-                CareerScreen(
+                RoomHost(
                     data,
                     c,
-                    onPlayRound = { vm.playNextRound() },
-                    onTable = { nav.navigate("table") },
-                    onFixtures = { nav.navigate("fixtures") },
-                    onSquad = { nav.navigate("club/${Uri.encode(it)}") },
-                    onQuit = {
-                        vm.quitCareer()
-                        nav.popBackStack("office", inclusive = false)
-                    },
-                    onBack = { nav.popBackStack() },
+                    onPlayMatch = { vm.playNextRound() },
+                    onExit = { nav.popBackStack("start", inclusive = false) },
                 )
             }
-        }
-        composable("table") {
-            val c = career
-            if (c == null) LaunchedEffect(Unit) { nav.popBackStack("office", inclusive = false) }
-            else TableScreen(data, c, onBack = { nav.popBackStack() })
-        }
-        composable("fixtures") {
-            val c = career
-            if (c == null) LaunchedEffect(Unit) { nav.popBackStack("office", inclusive = false) }
-            else FixturesScreen(data, c, onBack = { nav.popBackStack() })
-        }
-        composable("transfers") {
-            TransfersScreen(data, onPlayer = { nav.navigate("player/$it") }, onBack = { nav.popBackStack() })
         }
         composable(
             "player/{idx}",
