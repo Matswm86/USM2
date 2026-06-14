@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 Mats Mjåtvedt
+Copyright (c) 2026 Matswm86
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -27,8 +27,9 @@ NOTE ON GAME ASSETS
 The MIT license above covers ONLY the source code in this repository (the
 asset decoders and the Android application). It does NOT cover any data or
 artwork from Ultimate Soccer Manager 2, which is the intellectual property of
-its respective rights holders (Impressions Software / Sierra On-Line and their
-successors). No original game files, decoded databases, or artwork are
-distributed in this repository. To build a complete game you must supply your
-own legally-owned copy of Ultimate Soccer Manager 2 and run the decoders
-locally. See README.md.
+its respective rights holders (Impressions Games / Sierra On-Line and their
+successors). The slim derived dataset and screen images bundled under
+android/app/src/main/assets/ are included only for this non-commercial fan
+reconstruction (preservation and personal use) and remain the property of those
+rights holders; they are not granted under the MIT license. The original game
+program files are not redistributed here.
