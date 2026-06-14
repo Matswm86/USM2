@@ -54,7 +54,11 @@ def crop_scenes():
             continue
         im = Image.open(p).convert("RGB")
         scene = im.crop((0, SCENE_TOP, im.size[0], im.size[1]))
-        scene.filter(ImageFilter.MedianFilter(3)).save(out / f"{name}.png")
+        # Median strips the dither speckle; a light blur then blends the residual
+        # ordered-dither into the flat colours the art intends at native size
+        # (esp. the heavily-dithered office window onto the stadium).
+        cleaned = scene.filter(ImageFilter.MedianFilter(3)).filter(ImageFilter.GaussianBlur(0.8))
+        cleaned.save(out / f"{name}.png")
         n += 1
     return n
 
