@@ -1,18 +1,17 @@
 name: Build Android APK
 
-# Builds the USM2 debug APK. The copyrighted DB + artwork are NOT in this public
-# repo: they live in the private Matswm86/USM2-assets repo, checked out read-only
-# via the ASSETS_DEPLOY_KEY deploy key and bundled by tools/stage_assets.py. The
-# APK ships the original art, so it is a PRIVATE workflow artifact only — there is
-# deliberately no public release step.
+# Builds the USM2 debug APK and publishes it as a downloadable release. The app
+# is self-contained: the slim derived database + screen art live in
+# android/app/src/main/assets/, so the build needs no external asset source.
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   APK_NAME: usm2
@@ -21,23 +20,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code (public)
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Checkout assets (private, read-only)
-        uses: actions/checkout@v4
-        with:
-          repository: Matswm86/USM2-assets
-          ssh-key: ${{ secrets.ASSETS_DEPLOY_KEY }}
-          path: assets-src
-
-      - name: Stage decoded assets into the app
-        run: |
-          set -e
-          cp -r assets-src/decoded ./decoded
-          python3 tools/stage_assets.py
-          echo "Bundled assets:"
-          ls -la android/app/src/main/assets/data android/app/src/main/assets/img | head -20
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -81,9 +65,33 @@ jobs:
           cp android/app/build/outputs/apk/debug/app-debug.apk "${APK_NAME}.apk"
           ls -la "${APK_NAME}.apk"
 
-      - name: Upload APK as private workflow artifact
+      - name: Upload APK as workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APK_NAME }}-apk
           path: ${{ env.APK_NAME }}.apk
           retention-days: 30
+
+      - name: Update rolling "latest" release (main pushes)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build (rolling)
+          prerelease: true
+          body: |
+            Auto-built APK from the latest `main` commit (${{ github.sha }}).
+            Sideload only, debug-signed. If reinstalling over a build with a
+            different signature, uninstall the old copy first.
+          files: ${{ env.APK_NAME }}.apk
+          fail_on_unmatched_files: true
+
+      - name: Create tagged release (vX.Y.Z tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body: |
+            USM2 ${{ github.ref_name }}. Sideload, debug-signed.
+          files: ${{ env.APK_NAME }}.apk
+          fail_on_unmatched_files: true

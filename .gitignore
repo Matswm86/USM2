@@ -2,18 +2,18 @@
 # This repo is open-source CODE only. The original Ultimate Soccer Manager 2
 # files and anything decoded from them (database, artwork) are Impressions/
 # Sierra copyright and must NOT be redistributed. Provide your own copy.
+# Raw original DOS game files are never redistributed (the actual game binary).
 original/
-decoded/
 *.PIC
 *.DAT
 *.SVE
 *.PHS
 *.MCH
 *.THS
-# Staged into the APK by tools/stage_assets.py (slim DB JSON + original artwork).
-# Regenerate locally: python3 tools/stage_assets.py. CI sources these separately
-# (see docs/HANDOFF.md asset-delivery decision) so they never enter the public repo.
-android/app/src/main/assets/
+# Intermediate full decode (raw 144/246-byte dumps). The slim, app-ready subset
+# under android/app/src/main/assets/ IS committed so the build is self-contained;
+# decoded/ stays out as bulky intermediate. Regenerate: python3 tools/stage_assets.py
+decoded/
 
 # ---- Android / Gradle ----
 android/.gradle/

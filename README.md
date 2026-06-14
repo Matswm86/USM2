@@ -1,69 +1,62 @@
-# USM2 — native Android rebuild
+# USM2 — Ultimate Soccer Manager 2, rebuilt for Android
 
-A from-scratch native Android (Kotlin/Compose) rebuild of *Ultimate Soccer
-Manager 2* (Impressions/Sierra, 1997), reusing the original game's real
-database (teams, managers, players, stadiums) and original artwork, re-laid for
-touch. Personal project for Mats's own phone, built from his own owned copy.
+A native Android (Kotlin / Jetpack Compose) reconstruction of the 1997 DOS
+football-management classic **Ultimate Soccer Manager 2**, re-laid for touch.
+It reuses the original game's real database (clubs, managers, players,
+stadiums) and screen artwork, decoded from the original files.
 
-> Approach chosen 2026-06-14: **native rebuild** (decode original assets → reuse
-> art + full DB → reimplement UI and an approximation of the match/management
-> engine). The match-sim behaviour approximates the original; the DOS binary's
-> exact logic cannot be perfectly recovered.
+<p align="center">
+  <img src="docs/screen-title.png" width="48%" alt="USM2 title screen">
+  <img src="docs/screen-office.png" width="48%" alt="The manager's office">
+</p>
 
-## Layout
-```
-usm2/
-├── original/   # extracted DOS game (source of truth, not redistributed)
-├── tools/      # Python decoders (DAT→JSON, PAK2/PIC→PNG, etc.)
-├── decoded/    # decoded open assets (JSON db, PNG art)
-├── docs/       # FORMATS.md (RE log), ROADMAP.md
-└── android/    # Kotlin/Compose app (built via GitHub Actions CI)
-```
+## Download
 
-## Scope / world model
-The original game files contain three databases: **England, France, Germany**
-(636 clubs, ~11.8k players). All three are loaded into the game world; only the
-English seat is player-controlled.
+[![Build APK](https://github.com/Matswm86/USM2/actions/workflows/build-android.yml/badge.svg)](https://github.com/Matswm86/USM2/actions/workflows/build-android.yml)
 
-- **Playable**: the **English** pyramid only (manage an English club; Premier
-  League [division byte `0`, 20 clubs] down through the lower divisions).
-- **Full database loaded**: the English DB already includes **112 European
-  clubs** (division byte `255`) with real squads — Holland (Ajax, PSV, Feyenoord)
-  plus Juventus, Atlético, Porto, Rangers, Dortmund, etc. — and the separate
-  France (190) + Germany (220) pyramids add further depth. So you can:
-  - **buy players from other leagues** (transfer market spans every loaded DB:
-    Dutch/Italian/Spanish/French/German + the foreign "Euro" pool), and
-  - **play European competition** — your English club is drawn against the
-    continental clubs.
-- Leagues not in the original files (Italy, Spain, …) need non-original data and
-  are out of scope unless a licensed/community dataset is supplied.
+**[⬇ Download the latest APK](https://github.com/Matswm86/USM2/releases/latest/download/usm2.apk)**
 
-## Build phases (tracked in the session task list)
-1. **Decode assets** — DB ✅ (636 teams / ~11.8k players → JSON); graphics 🟡
-   (PAK2 header solved, body packer pending).
-2. **Rebuild UI** — office/team/transfers/finance/chairman/news/match screens in
-   Compose, original art re-laid for touch, original navigation flow.
-3. **Reimplement engine** — fixtures, tables, transfers, finances, training,
-   board confidence, match simulation driven by decoded ratings.
-4. **CI build + balance** — APK via GitHub Actions (never local gradle, per the
-   8GB-host OOM constraint), rolling `latest` release + README download link;
-   balance & playtest.
+Sideload it on Android 8.0+ (enable "install unknown apps"). It is debug-signed,
+so if you are updating over an older build with a different signature, uninstall
+the old copy first.
 
-## Assets & how to build a complete game
-This repo is **code only**. No copyrighted game data or artwork is included.
-To produce a populated build you must own a copy of USM2 and extract its assets
-yourself:
-```bash
-# place your USM2 files in original/ (gitignored), then:
-python3 tools/decode_db.py      # -> decoded/*.json   (database)
-python3 tools/decode_pic.py     # -> decoded/pics/*.png (artwork)  [WIP]
-```
-The decoded assets land in `decoded/` (gitignored). How those personal assets
-get bundled into the CI-built APK without publishing them is a packaging step
-handled outside this public repo (private asset source / release artifact).
+## What works today
 
-## Decode toolkit
-- `tools/decode_db.py` → `decoded/teams_*.json`, `decoded/players_*.json`
-- `tools/decode_pic.py` → PNG screens (pending PAK2 body crack)
+- **Office** home screen with the original artwork.
+- **League browser**: England (Premier League down to the Conference), the
+  European club pool, France and Germany. 412 clubs, 8,600+ players.
+- **Squads** per club, sorted by rating, with per-player attributes.
+- **Transfer market**: search every player across all leagues.
 
-See `docs/FORMATS.md` for the full reverse-engineering log.
+The match engine and management loop (fixtures, finances, training, board
+confidence, match simulation) are not built yet, see the roadmap.
+
+## Roadmap
+
+1. **Decode the original assets** — database and all screen artwork. ✅
+2. **UI shell** — office, league/squad browser, player detail, transfers. ✅
+3. **Match & management engine** — fixtures, tables, transfers, finances,
+   training, board confidence, and a match simulation driven by the decoded
+   ratings. 🔜
+4. **Balance & playtest.**
+
+## Building
+
+APKs are built in CI (GitHub Actions), not locally. Push to `main` or run the
+**Build Android APK** workflow; it produces `usm2.apk` as a workflow artifact
+and updates the rolling `latest` release.
+
+The Android project lives in [`android/`](android/) (`compileSdk 35`,
+`minSdk 26`). The slim derived dataset and screen art it ships are committed
+under `android/app/src/main/assets/`. The Python decoders that produced them
+are in [`tools/`](tools/); the reverse-engineering notes are in
+[`docs/FORMATS.md`](docs/FORMATS.md).
+
+## Credits & legal
+
+*Ultimate Soccer Manager 2* was created by Impressions Games and published by
+Sierra in 1997. The game, its database and its artwork remain the property of
+their respective rights holders. This project is a non-commercial fan
+reconstruction for preservation and personal use, and is not affiliated with or
+endorsed by the original creators. The original game program files are not
+redistributed here.
