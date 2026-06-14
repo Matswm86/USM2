@@ -10,6 +10,10 @@ decoded/
 *.PHS
 *.MCH
 *.THS
+# Staged into the APK by tools/stage_assets.py (slim DB JSON + original artwork).
+# Regenerate locally: python3 tools/stage_assets.py. CI sources these separately
+# (see docs/HANDOFF.md asset-delivery decision) so they never enter the public repo.
+android/app/src/main/assets/
 
 # ---- Android / Gradle ----
 android/.gradle/

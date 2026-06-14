@@ -3,6 +3,30 @@
 Continuation doc for a fresh session. Phase 1 is **complete**; next is **Phase 2**.
 Read this + `docs/FORMATS.md` (the reverse-engineering log) and you have everything.
 
+## Phase 2 status (session 2, 2026-06-14) — UI shell shipped, CI pending first green run
+- **Player→club link recovered**: player byte 32 (`raw_tail[4]`) = 1-based club id,
+  `club_id == team index + 1`. Verified by reconstructing Arsenal's real 1996/97
+  squad (Seaman/Dixon/Bould/Adams/Winterburn/Merson/Platt). `decode_db.py` now emits
+  `club_id` (players) and `division` (teams, = `stats_raw[7]`) as first-class fields.
+- **`tools/stage_assets.py`** merges the 3 league files into a slim app bundle:
+  `clubs.json` (412 clubs: England 114 / Europe 112 / France 78 / Germany 108) +
+  `players.json` (8683) + the 14 PNG screens, written into the gitignored
+  `android/app/src/main/assets/`. Europe pool is taken canonical from the English
+  file only (FR/DE div-255 dropped) so Ajax/Juve aren't triplicated.
+- **Android app** (`android/`, Kotlin/Compose, namespace `no.mwmai.usm2`) scaffolded
+  off the working pcleague template. Screens: Office (MAINSCR bg + menu), Leagues →
+  division-sectioned clubs → squad → player detail (skill bars; attribute names still
+  TBD), and a cross-league Transfer search. Loads JSON from assets off the main thread.
+- **Asset delivery decided with Mats**: copyrighted assets live in the **private**
+  `Matswm86/USM2-assets` repo (decoded/ + original/); CI checks it out read-only via
+  the `ASSETS_DEPLOY_KEY` deploy key and runs `stage_assets.py`. APK is a **private
+  workflow artifact only** (no public release — it bundles original art).
+- **OPEN / next session**: (1) Mats must push assets to the private repo — the bulk
+  push was blocked by the exfil classifier and needs his hand (command in chat / memory
+  handoff). (2) First CI run will fail at the asset step until then; re-run after.
+  (3) Verify the APK renders on-device (office bg + browser). (4) Sprite-slice TOOLS.BIT
+  for office icons. (5) Phase 3 = match/management engine.
+
 ## What this project is
 Native **Android (Kotlin/Compose)** rebuild of *Ultimate Soccer Manager 2*
 (Impressions/Sierra, 1997), reusing the original game's real database + original

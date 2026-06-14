@@ -1,0 +1,8 @@
+<resources>
+    <!-- USM2 office green-felt palette: deep desk green with a darker chrome. -->
+    <style name="Theme.USM2" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#0B3D24</item>
+        <item name="android:navigationBarColor">#0B3D24</item>
+        <item name="android:windowBackground">#06281A</item>
+    </style>
+</resources>

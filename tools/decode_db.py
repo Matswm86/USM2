@@ -43,6 +43,7 @@ def decode_teams(path: Path) -> list[dict]:
         name = cstr(r[0:20])
         if not name:
             continue
+        stats = r[80:]
         teams.append(
             {
                 "index": i,
@@ -50,7 +51,11 @@ def decode_teams(path: Path) -> list[dict]:
                 "manager": cstr(r[20:40]),
                 "short_name": cstr(r[40:60]),
                 "stadium": cstr(r[60:80]),
-                "stats_raw": list(r[80:]),  # finances/reputation/division/etc.
+                # division = stats[7]: 0 = Premier (20 clubs), 1-4 = lower English
+                # tiers, 255 = European club pool (Ajax/Juventus/...). Verified vs
+                # the real 1996/97 ladder (Arsenal=0, Man City=1, Barnet=3).
+                "division": stats[7],
+                "stats_raw": list(stats),  # finances/reputation/etc. preserved
             }
         )
     return teams
@@ -67,16 +72,22 @@ def decode_players(path: Path) -> list[dict]:
         if not first and not last:
             continue
         # Field offsets recovered by column profiling (see docs/FORMATS.md):
-        #   28 = age; 33 = key-player flag (0xFF); 123-133 = skill block
-        #   (values ~0-99); 128 is a constant 100 (normaliser). Exact per-column
-        #   attribute names (tackle/pass/shoot/handle/pace/...) still TBD from the
-        #   player-screen display code, so skills are kept as an ordered list.
+        #   28 = age; 32 = club id; 33 = key-player flag (0xFF); 123-133 = skill
+        #   block (values ~0-99); 128 is a constant 100 (normaliser). Exact
+        #   per-column attribute names (tackle/pass/shoot/handle/pace/...) still
+        #   TBD from the player-screen display code, so skills are kept ordered.
+        #
+        #   club id (byte 32) is 1-based: club_id == team "index" + 1. Verified by
+        #   reconstructing Arsenal's 1996/97 squad (Seaman/Dixon/Adams/Winterburn/
+        #   Merson/Platt) from club_id 2 -> team index 1. id 0 / 255 = the
+        #   unattached / free-agent pool (no real club).
         players.append(
             {
                 "index": i,
                 "first_name": first,
                 "surname": last,
                 "age": r[28],
+                "club_id": r[32],
                 "key_player": r[33] == 0xFF,
                 "skills": list(r[123:134]),  # 11 bytes; [5]=byte128 const 100
                 "raw_tail": list(r[28:]),    # full tail preserved for refinement

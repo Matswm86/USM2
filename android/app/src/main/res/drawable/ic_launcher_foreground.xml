@@ -1,0 +1,20 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- pitch stripes -->
+    <path android:fillColor="#1B7A2E" android:pathData="M28,28h52v52h-52z" />
+    <path android:fillColor="#22933A" android:pathData="M28,28h13v52h-13z" />
+    <path android:fillColor="#22933A" android:pathData="M54,28h13v52h-13z" />
+    <!-- center circle -->
+    <path android:strokeColor="#EFEFEF" android:strokeWidth="1.6"
+        android:fillColor="#00000000"
+        android:pathData="M54,46 a8,8 0 1,0 0.1,0 z" />
+    <path android:strokeColor="#EFEFEF" android:strokeWidth="1.6"
+        android:pathData="M54,28 L54,80" />
+    <!-- ball -->
+    <path android:fillColor="#FFFFFF" android:pathData="M54,48 a6,6 0 1,0 0.1,0 z" />
+    <path android:fillColor="#101010"
+        android:pathData="M54,50 l2.4,1.8 -0.9,2.8 -3,0 -0.9,-2.8 z" />
+</vector>
