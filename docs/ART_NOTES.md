@@ -49,12 +49,22 @@ each full-size. Result is now baked into `decode_pic.py` as `PER_SCREEN_PALETTE`
 **Why the match family is not in the static map.** USM2E.EXE carries live
 "Pitch Quality : Wet / Mud / Ice / ..." strings (file ~0xedcd0) and only one
 palette file (`all.pal`); the game tints the pitch from live pitch-condition
-state. So the match-screen palette belongs to the **Phase-3 match renderer**, not
-this static decode. Visual finding for when that lands: **set 1** keeps the
-weather distinct (green grass + brown mud/worn patches), while set 5 over-saturates
-everything to flat green and loses the condition; MATCHICE wants set 0/6 (blue
-frost). These are unused until a match view exists, so they are left at the
-default (0) in staging rather than baking a guess.
+state. So the match-screen palette belongs to the **match renderer**, not this
+static `.PIC` decode.
+
+**RESOLVED (session 16) — weather palettes baked into the match view.**
+`stage_phase3_ui.export_match` now ships four pitch surfaces, picked by eyeballing
+the ALL.PAL 0/1/5/6 sweep (`/tmp/weather_compare.png`):
+- **DRY** = `MATCHSCR` @ set 1 → `pitch.png` (the clean green pitch).
+- **MUD** = `MATCHMUD` @ set 1 → `pitch_mud.png` (green grass with brown worn patches).
+- **WET** = `MATCHWET` @ set 1 → `pitch_wet.png` (darker, patchy green).
+- **ICE** = `MATCHICE` @ **set 0** → `pitch_ice.png` (clean light-blue frost; set 6
+  framed it in a spurious red border, so set 0 won).
+Set 5 over-saturates everything to flat green and loses the condition — rejected.
+All four share one camera, so the single `pitch_quad.json` (detected from `pitch.png`)
+serves them all (verified by overlay). `MATCHBAR` is unused (it is the info-bar
+variant, not a weather state). The condition itself is chosen deterministically
+per fixture by `engine/Weather.kt pitchConditionFor` (cosmetic; never the score).
 
 There was **no static screen→palette index table** to recover from the EXE: the
 `.pic` filenames sit in a packed C-string literal block with no interleaved

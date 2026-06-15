@@ -47,6 +47,7 @@ data class ManagedPreview(
     val awayGoals: Int,
     val seed: Long,
     val homeIsManaged: Boolean,
+    val condition: PitchCondition,
 )
 
 /**
@@ -293,6 +294,7 @@ data class Career(
             homeId = clubIds[f.home], awayId = clubIds[f.away],
             homeGoals = r[0], awayGoals = r[1], seed = seed,
             homeIsManaged = f.home == managedIndex,
+            condition = pitchConditionFor(seasonSeed, f.round, f.home, f.away, totalRounds),
         )
     }
 

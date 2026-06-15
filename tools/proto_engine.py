@@ -282,6 +282,31 @@ def goal_minutes(home_goals, away_goals, seed):
     return draw(home_goals), draw(away_goals)
 
 
+# Mirror of Kotlin engine/Weather.kt: the cosmetic pitch surface for a fixture.
+WEATHER_SALT = 0x6A09E667F3BCC909
+
+
+def pitch_condition_for(season_seed, rnd, home, away, total_rounds):
+    """Mirror of Kotlin pitchConditionFor. Cosmetic only — salted off the fixture
+    seed so it never touches the goal RNG. Seasonal: ICE only in deep winter,
+    DRY dominant at the season's ends."""
+    seed = ((season_seed * 1_000_003 + rnd * 9176 + home * 131 + away)
+            & 0xFFFFFFFFFFFFFFFF) ^ WEATHER_SALT
+    rng = Rng(seed)
+    r = rng.next_double()
+    progress = rnd / (total_rounds - 1) if total_rounds > 1 else 0.0
+    winter = max(0.0, min(1.0, 1.0 - abs(progress - 0.5) * 2.0))
+    p_bad = 0.10 + 0.45 * winter
+    if r >= p_bad:
+        return "DRY"
+    r2 = rng.next_double()
+    if winter > 0.6 and r2 < 0.25:
+        return "ICE"
+    if r2 < 0.60:
+        return "WET"
+    return "MUD"
+
+
 def validate_match_timeline(epl, players, by_club):
     """The match view animates toward the SAME score playNextRound records, then
     spaces the goals over 1..90. Assert: (a) the preview path and the round-play
@@ -318,6 +343,45 @@ def validate_match_timeline(epl, players, by_club):
     print("\n== match preview == round-play, timeline deterministic: PASS ==")
     print(f"  managed fixture {epl[h]['name']} {hg}-{ag} {epl[a]['name']}  "
           f"home goals @ {hmin}  away goals @ {amin}")
+
+
+def validate_weather(epl):
+    """The match-view pitch surface is purely cosmetic. Assert: (a) it is
+    deterministic per fixture, (b) its seed is DISJOINT from the goal RNG seed
+    (so weather can never move the recorded scoreline), and (c) over a full season
+    every condition appears, ICE only in deep winter, and DRY dominates."""
+    n = len(epl)
+    sched = double_round_robin(n)
+    season_seed = 777
+    total_rounds = len(sched)
+
+    # (a) determinism + (b) seed disjoint from goal + timeline RNG seeds
+    h, a = sched[0][0]
+    c1 = pitch_condition_for(season_seed, 0, h, a, total_rounds)
+    c2 = pitch_condition_for(season_seed, 0, h, a, total_rounds)
+    assert c1 == c2, "weather not deterministic"
+    fs = fixture_seed(season_seed, 0, h, a)
+    assert (fs ^ WEATHER_SALT) != fs, "weather seed not salted off the goal seed"
+    assert (fs ^ WEATHER_SALT) != (fs ^ 0x51ED27015A1C), "weather seed collides with timeline seed"
+
+    # (c) full-season distribution + seasonal ICE
+    tally = {"DRY": 0, "MUD": 0, "WET": 0, "ICE": 0}
+    for rnd, fixtures in enumerate(sched):
+        progress = rnd / (total_rounds - 1) if total_rounds > 1 else 0.0
+        winter = max(0.0, min(1.0, 1.0 - abs(progress - 0.5) * 2.0))
+        for (hh, aa) in fixtures:
+            cond = pitch_condition_for(season_seed, rnd, hh, aa, total_rounds)
+            tally[cond] += 1
+            if cond == "ICE":
+                assert winter > 0.6, f"ICE outside deep winter (round {rnd}, winter={winter:.2f})"
+    total = sum(tally.values())
+    for k in ("DRY", "MUD", "WET", "ICE"):
+        assert tally[k] > 0, f"condition {k} never occurs over a season"
+    assert tally["DRY"] == max(tally.values()), "DRY is not the most common pitch"
+    assert tally["DRY"] / total > 0.5, "dry pitches should dominate a season"
+    print("\n== weather: deterministic, score-disjoint, seasonal, DRY-dominant: PASS ==")
+    print(f"  {total} fixtures over {total_rounds} rounds: "
+          + " ".join(f"{k}={v}" for k, v in tally.items()))
 
 
 # ---- 5. transfers (mirrors engine/Valuation.kt + Career.signPlayer/sellPlayer) -
@@ -651,6 +715,7 @@ def main():
               f"{r['l']:>2} {r['gf']:>3} {r['ga']:>3} {gd:>3} {r['pts']:>3}")
     validate_rollover(clubs, players)
     validate_match_timeline(epl, players, by_club)
+    validate_weather(epl)
     validate_transfers(clubs, players, by_club)
     validate_finances(clubs, players, by_club)
     validate_lineup(clubs, players, by_club)

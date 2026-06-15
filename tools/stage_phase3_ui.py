@@ -181,6 +181,18 @@ def export_match():
     pitch = pixels_to_image(pixels, 640, 480, home_pal)
     pitch.save(out / "pitch.png")
 
+    # 1b. weather pitches (purely cosmetic; same 640x480 camera => the same
+    # pitch_quad serves all four). DRY == pitch.png above. MUD/WET keep ALL.PAL
+    # set 1 (green grass with the brown worn / darker wet patches showing); ICE
+    # uses set 0 (a clean light-blue frost — set 6 frames it in a spurious red
+    # border). Sets chosen by eyeballing the 0/1/5/6 sweep; see docs/ART_NOTES.md.
+    for stem, pal_set, name in (("MATCHMUD", 1, "pitch_mud"),
+                                ("MATCHWET", 1, "pitch_wet"),
+                                ("MATCHICE", 0, "pitch_ice")):
+        wp = load_palette(ORIG / "ALL.PAL", pal_set)
+        wpx = decode_pak2((ORIG / f"{stem}.PIC").read_bytes())
+        pixels_to_image(wpx, 640, 480, wp).save(out / f"{name}.png")
+
     # 2. player sprites (home red kit, away blue kit) from PITCH.SPR
     buf = decode_pak2_full((ORIG / "PITCH.SPR").read_bytes())
     _sprite(buf, SPR_IDLE, home_pal).save(out / "h_idle.png")
@@ -191,7 +203,7 @@ def export_match():
 
     # 3. playable-pitch quad in [0,1] of pitch.png
     (ASSETS / "data" / "pitch_quad.json").write_text(json.dumps(_pitch_quad(pitch)))
-    return 2 + 2 * len(SPR_RUN)
+    return 2 + 2 * len(SPR_RUN) + 3
 
 
 def verify():

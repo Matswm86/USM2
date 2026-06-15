@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import no.mwmai.usm2.GameData
 import no.mwmai.usm2.engine.Career
+import no.mwmai.usm2.engine.PitchCondition
 import no.mwmai.usm2.engine.Rng
 import no.mwmai.usm2.engine.Sim
 import kotlin.math.hypot
@@ -61,6 +62,7 @@ data class MatchPlan(
     val homeForm: List<Pair<Double, Double>>,
     val awayForm: List<Pair<Double, Double>>,
     val seed: Long,
+    val condition: PitchCondition,
 )
 
 // Fallback 4-4-2 (fx across 0..1, fy depth with 1=GK .. 0=striker) if FORM.DAT
@@ -121,7 +123,25 @@ fun buildMatchPlan(data: GameData, career: Career): MatchPlan? {
         homeForm = form,
         awayForm = form,
         seed = pv.seed,
+        condition = pv.condition,
     )
+}
+
+/** A short label for the weather chip (null = dry, no chip). */
+private fun conditionLabel(c: PitchCondition): String? = when (c) {
+    PitchCondition.DRY -> null
+    PitchCondition.MUD -> "Muddy pitch"
+    PitchCondition.WET -> "Wet pitch"
+    PitchCondition.ICE -> "Frozen pitch"
+}
+
+/** Cosmetic ball-pace multiplier by surface: mud drags, a wet pitch skids, ice
+ * slides. Affects only the live ball animation, never the scoreline. */
+private fun ballPaceFor(c: PitchCondition): Float = when (c) {
+    PitchCondition.DRY -> 1.0f
+    PitchCondition.MUD -> 0.82f
+    PitchCondition.WET -> 1.08f
+    PitchCondition.ICE -> 1.18f
 }
 
 // --- live choreography ------------------------------------------------------
@@ -132,7 +152,7 @@ private const val MS_PER_MIN = 520f          // real ms per match-minute at 1x
 private const val PLAYER_SPEED = 0.42f       // pitch-fractions / sec
 private const val BALL_SPEED = 0.62f
 
-private class MatchSim(homeForm: List<Pair<Double, Double>>, awayForm: List<Pair<Double, Double>>, seed: Long) {
+private class MatchSim(homeForm: List<Pair<Double, Double>>, awayForm: List<Pair<Double, Double>>, seed: Long, private val ballPace: Float = 1f) {
     val n = 22
     val px = FloatArray(n)
     val py = FloatArray(n)
@@ -201,7 +221,7 @@ private class MatchSim(homeForm: List<Pair<Double, Double>>, awayForm: List<Pair
         val dx = tx - bx
         val dy = ty - by
         val d = hypot(dx, dy)
-        val s = BALL_SPEED * dt
+        val s = BALL_SPEED * ballPace * dt
         decisionT -= dt
         if (d <= s || decisionT <= 0f) {
             if (d <= s) {
@@ -260,7 +280,14 @@ private val Ink = Color(0xFFEAF2EA)
 
 @Composable
 fun MatchView(data: GameData, plan: MatchPlan, onFinish: () -> Unit) {
-    val pitch = rememberAssetImage("img/match/pitch.png")
+    val pitch = rememberAssetImage(
+        when (plan.condition) {
+            PitchCondition.MUD -> "img/match/pitch_mud.png"
+            PitchCondition.WET -> "img/match/pitch_wet.png"
+            PitchCondition.ICE -> "img/match/pitch_ice.png"
+            PitchCondition.DRY -> "img/match/pitch.png"
+        },
+    )
     val homeRun = listOf(
         rememberAssetImage("img/match/h_run0.png"),
         rememberAssetImage("img/match/h_run1.png"),
@@ -279,7 +306,7 @@ fun MatchView(data: GameData, plan: MatchPlan, onFinish: () -> Unit) {
     val awayIdle = rememberAssetImage("img/match/a_idle.png")
     val q = data.pitchQuad
 
-    val sim = remember(plan) { MatchSim(plan.homeForm, plan.awayForm, plan.seed) }
+    val sim = remember(plan) { MatchSim(plan.homeForm, plan.awayForm, plan.seed, ballPaceFor(plan.condition)) }
     var elapsed by remember(plan) { mutableFloatStateOf(0f) }
     var minute by remember(plan) { mutableIntStateOf(0) }
     var evIdx by remember(plan) { mutableIntStateOf(0) }
@@ -392,6 +419,9 @@ fun MatchView(data: GameData, plan: MatchPlan, onFinish: () -> Unit) {
             Text("$hScore - $aScore", color = Gold, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
             Text(plan.awayShort, color = Ink, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
             Text("$minute'", color = Ink, style = MaterialTheme.typography.titleMedium)
+            conditionLabel(plan.condition)?.let {
+                Text(it, color = Color(0xFFBFE0FF), style = MaterialTheme.typography.labelMedium)
+            }
         }
 
         if (elapsed < flashUntil && !finished) {
