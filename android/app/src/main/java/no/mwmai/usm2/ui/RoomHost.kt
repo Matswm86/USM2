@@ -336,15 +336,17 @@ private fun BankPanel(data: GameData, career: Career, onOpenTransfers: () -> Uni
         }
         Spacer(Modifier.height(6.dp))
         FinanceRow("Transfer budget", money(career.budget))
-        FinanceRow("Club", club?.name ?: "-")
-        FinanceRow("Stadium", club?.stadium ?: "-")
-        FinanceRow("Tier", "${career.divisionName} · S${career.season}")
+        FinanceRow("Wage bill", "${money(career.wageBillPerMatchK)}/match")
+        FinanceRow("Gate receipts", "${money(career.gatePerHomeK())}/home")
+        FinanceRow("This season", "gate ${money(career.seasonGateK)} · wages ${money(career.seasonWagesK)}")
+        if (career.lastSeasonPrizeK > 0) FinanceRow("Last season prize", money(career.lastSeasonPrizeK))
+        FinanceRow("Stadium", "${club?.stadium ?: "-"} · ${career.divisionName}")
         FinanceRow("Squad value (est.)", money(valueK))
         FinanceRow("Squad", "${squad.size} players · avg rating $avg")
         prized?.let { FinanceRow("Prize asset", "${it.name} (${it.rating}) · ${money(Valuation.valueK(it))}") }
         Spacer(Modifier.height(4.dp))
         Text(
-            "Budget + values are estimates from the real squad ratings; the seed DB carries no balance.",
+            "All figures estimated from the real squad + tier; the seed DB carries no balance.",
             color = Sub,
             style = MaterialTheme.typography.labelSmall,
         )

@@ -89,6 +89,17 @@ data class Career(
     /** Every transfer made this career, oldest first. Folded (last per player wins)
      * to give each player's current club; see [currentClubOf] / [squadFor]. */
     val transfers: List<Transfer> = emptyList(),
+    // ---- finances (all £k; 0 / defaults on pre-finance saves) ----
+    /** Wage bill charged each matchday the club plays; recomputed on every transfer. */
+    val wageBillPerMatchK: Long = 0,
+    /** Squad value vs division average, frozen at start; scales gate receipts. */
+    val clubSizeFactor: Double = 1.0,
+    /** Gate income accumulated across this season's home games (Bank display + P&L). */
+    val seasonGateK: Long = 0,
+    /** Wages paid across this season so far (Bank display + P&L). */
+    val seasonWagesK: Long = 0,
+    /** Prize money from the season just completed (set at rollover, for display). */
+    val lastSeasonPrizeK: Long = 0,
 ) {
     val totalRounds: Int get() = (fixtures.maxOfOrNull { it.round } ?: -1) + 1
 
@@ -125,7 +136,11 @@ data class Career(
             .indexOfFirst { it.clubIndex == managedIndex }
             .let { if (it < 0) 0 else it + 1 }
 
-    /** Simulates every fixture in [nextRound] and returns the updated career. */
+    /** Gate income for one of the managed club's home games at its current tier. */
+    fun gatePerHomeK(): Long = Finance.gatePerHomeK(activeTierIndex.coerceAtLeast(0), clubSizeFactor)
+
+    /** Simulates every fixture in [nextRound], applies the managed club's matchday
+     * finances (wages out, gate in on a home game), and returns the updated career. */
     fun playNextRound(): Career {
         if (seasonComplete) return this
         val round = nextRound
@@ -147,7 +162,26 @@ data class Career(
                 f
             }
         }
-        return copy(fixtures = updated)
+        // Managed club's matchday finances: pay wages when it plays, take the gate at home.
+        val mf = fixtures.firstOrNull { it.round == round && (it.home == managedIndex || it.away == managedIndex) }
+        var newBudget = budget
+        var gate = seasonGateK
+        var wages = seasonWagesK
+        if (mf != null && wageBillPerMatchK > 0L) {
+            newBudget -= wageBillPerMatchK
+            wages += wageBillPerMatchK
+            if (mf.home == managedIndex) {
+                val g = gatePerHomeK()
+                newBudget += g
+                gate += g
+            }
+        }
+        return copy(
+            fixtures = updated,
+            budget = newBudget.coerceAtLeast(0L),
+            seasonGateK = gate,
+            seasonWagesK = wages,
+        )
     }
 
     /**
@@ -199,6 +233,14 @@ data class Career(
         val defence = newClubIds.map { str(it).defence }
         val newSeed = rolloverSeed(0xFFFF)
 
+        // Finances: prize money for the season just finished (old tier + final rank),
+        // plus a one-off bonus if the managed club won promotion to a higher tier.
+        val oldTier = activeTierIndex.coerceAtLeast(0)
+        val prize = Finance.seasonPrizeK(oldTier, managedFinalRank(), clubIds.size)
+        val newTierIdx = newTiers.indexOfFirst { managedClubId in it.clubIds }.coerceAtLeast(0)
+        val promoBonus = if (newTierIdx < oldTier) Finance.promotionBonusK(newTierIdx) else 0L
+        val newBudget = (budget + prize + promoBonus).coerceAtLeast(0L)
+
         return copy(
             division = newActive.division,
             divisionName = newActive.divisionName,
@@ -211,6 +253,10 @@ data class Career(
             fixtures = Schedule.season(newClubIds.size, newSeed),
             season = season + 1,
             pyramid = newTiers,
+            budget = newBudget,
+            seasonGateK = 0,
+            seasonWagesK = 0,
+            lastSeasonPrizeK = prize,
         )
     }
 
@@ -305,7 +351,8 @@ data class Career(
             transfers = transfers + Transfer(playerIndex, toClub, feeK),
         )
         for (cid in listOfNotNull(from, toClub).distinct()) c = c.recomputeStrength(data, cid)
-        return c
+        // Every transfer changes the managed squad, so re-rate the wage bill.
+        return c.copy(wageBillPerMatchK = Finance.wageBillPerMatchK(c.managedSquad(data)))
     }
 
     /** Re-freezes [clubId]'s strength triple from its CURRENT squad, writing both the

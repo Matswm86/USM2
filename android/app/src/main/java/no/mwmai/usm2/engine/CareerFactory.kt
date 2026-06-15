@@ -62,6 +62,10 @@ object CareerFactory {
         val fixtures = Schedule.season(clubIds.size, seed)
         val squadValueK = data.squad(clubId).sumOf { Valuation.valueK(it) }
         val budget = (squadValueK * BUDGET_FRACTION).toLong().coerceAtLeast(BUDGET_FLOOR_K)
+        val wageBill = Finance.wageBillPerMatchK(data.squad(clubId))
+        val divisionAvgK = active.map { c -> data.squad(c.id).sumOf { Valuation.valueK(it) } }
+            .average().toLong()
+        val sizeFactor = Finance.sizeFactor(squadValueK, divisionAvgK)
         return Career(
             managedClubId = clubId,
             group = club.group,
@@ -78,6 +82,8 @@ object CareerFactory {
             pyramid = tiers,
             promotionSlots = promotionSlots,
             budget = budget,
+            wageBillPerMatchK = wageBill,
+            clubSizeFactor = sizeFactor,
         )
     }
 }

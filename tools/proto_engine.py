@@ -430,6 +430,79 @@ def validate_transfers(clubs, players, by_club):
           f"(round-trip cost £{(fee-fee_s)/1000:.2f}M); floor lets {legal_sells} sales")
 
 
+# ---- 6. finances (mirrors engine/Finance.kt + Career play/rollover hooks) ----
+WAGE_RATE = 0.0045
+GATE_BASE = [420, 190, 95, 55, 32]
+PRIZE_BASE = [12000, 3400, 1400, 700, 350]
+PROMO_BONUS = [2500, 1200, 600, 300, 0]
+
+
+def wage_bill_k(squad):
+    return int(sum(value_k(p) for p in squad) * WAGE_RATE)
+
+
+def gate_per_home_k(tier, size_factor):
+    return int(GATE_BASE[min(tier, len(GATE_BASE) - 1)] * size_factor)
+
+
+def season_prize_k(tier, rank, size):
+    if rank <= 0 or size <= 0:
+        return 0
+    return PRIZE_BASE[min(tier, len(PRIZE_BASE) - 1)] * (size - rank + 1) // size
+
+
+def validate_finances(clubs, players, by_club):
+    """Play the managed club's full season applying the matchday finance hook, and
+    assert: the running budget equals the closed-form (start - games*wage +
+    homes*gate); the season tallies match; prize money is monotonic in finishing
+    position; and the whole thing is deterministic. Mirrors Career.playNextRound +
+    rolloverSeason + Finance."""
+    epl = [c for c in clubs if c["group"] == "England" and c["division"] == 0]
+    n = len(epl)
+    managed = 0
+    msquad = by_club[epl[managed]["id"]]
+    sv = sum(value_k(p) for p in msquad)
+    budget0 = max(250, int(sv * 0.30))
+    div_avg = int(statistics.mean([sum(value_k(p) for p in by_club.get(c["id"], [])) for c in epl]))
+    size_factor = sv / div_avg if div_avg else 1.0
+    wage = wage_bill_k(msquad)
+    gate = gate_per_home_k(0, size_factor)
+
+    def run_season():
+        budget, sg, sw = budget0, 0, 0
+        homes = games = 0
+        for rnd in double_round_robin(n):
+            mf = next((m for m in rnd if managed in m), None)
+            if mf is None:
+                continue
+            budget -= wage; sw += wage; games += 1
+            if mf[0] == managed:  # home
+                budget += gate; sg += gate; homes += 1
+            budget = max(0, budget)
+        return budget, sg, sw, homes, games
+
+    budget, sg, sw, homes, games = run_season()
+    assert games == 2 * (n - 1), f"managed played {games} != {2*(n-1)}"
+    assert homes == n - 1, f"home games {homes} != {n-1}"
+    assert sw == games * wage and sg == homes * gate, "season tallies wrong"
+    # closed form holds because the budget never floors (verify it stayed positive)
+    assert budget0 - games * wage + homes * gate >= 0, "test club would go broke (bad pick)"
+    assert budget == budget0 - games * wage + homes * gate, "running budget != closed form"
+    assert run_season() == (budget, sg, sw, homes, games), "finances not deterministic"
+
+    # prize money: champion gets the tier base, strictly less as you finish lower
+    prizes = [season_prize_k(0, r, n) for r in range(1, n + 1)]
+    assert prizes[0] == PRIZE_BASE[0], "champion prize != tier base"
+    assert all(prizes[i] >= prizes[i + 1] for i in range(n - 1)), "prize not monotonic in rank"
+    assert prizes[-1] < prizes[0], "last place earns as much as the champion"
+
+    net = budget - budget0
+    print("\n== finances: matchday P&L closed-form, tallies, prize curve, determinism: PASS ==")
+    print(f"  {epl[managed]['name']} budget £{budget0/1000:.1f}M; wage £{wage}k/mt, gate £{gate}k/home "
+          f"(sizeF {size_factor:.2f}); season net £{net/1000:+.1f}M; "
+          f"champion prize £{prizes[0]/1000:.1f}M -> last £{prizes[-1]/1000:.1f}M")
+
+
 def main():
     clubs = json.loads((ASSETS / "clubs.json").read_text())
     players = json.loads((ASSETS / "players.json").read_text())
@@ -522,6 +595,7 @@ def main():
     validate_rollover(clubs, players)
     validate_match_timeline(epl, players, by_club)
     validate_transfers(clubs, players, by_club)
+    validate_finances(clubs, players, by_club)
     print("\nALL CHECKS PASSED")
 
 
