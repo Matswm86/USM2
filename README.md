@@ -36,7 +36,8 @@ It is a playable manager, not just a database browser:
   whistle, a roar when you score, a groan when you concede, full-time whistle.
 - **Transfers & a living budget**: buy and sell from the office phone against a
   real balance that moves with wages, gate receipts and prize money.
-- **Pick your starting XI** — a weaker eleven fields a weaker side.
+- **Pick your starting XI** — a weaker eleven fields a weaker side — and make
+  **substitutions during the match** (three per game; the clock pauses).
 - **League browser**: England (Premier League down to the Conference), the
   European club pool, France and Germany. 412 clubs, 8,600+ players, with
   per-player attributes decoded from the original game.
@@ -50,8 +51,8 @@ It is a playable manager, not just a database browser:
 3. **Match & management engine** — fixtures, tables, transfers, finances,
    manual line-up, season rollover, and an animated match view with weather,
    crowd audio and diving keepers. ✅
-4. **More depth (optional):** AI clubs making their own transfers, in-match
-   substitutions, and wider playtest balancing.
+4. **More depth (optional):** AI clubs making their own transfers and wider
+   playtest balancing.
 
 ## Building
 
