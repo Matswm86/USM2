@@ -6,11 +6,17 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,6 +24,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -37,6 +44,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import no.mwmai.usm2.GameData
+import no.mwmai.usm2.Player
 import no.mwmai.usm2.engine.Career
 import no.mwmai.usm2.engine.PitchCondition
 import no.mwmai.usm2.engine.Rng
@@ -65,7 +73,24 @@ data class MatchPlan(
     val seed: Long,
     val condition: PitchCondition,
     val homeIsManaged: Boolean,
+    // Managed club rosters for in-match subs (global player indices). The XI is on
+    // the pitch at kick-off; the bench is everyone else in the squad.
+    val managedXI: List<Int>,
+    val managedBench: List<Int>,
 )
+
+/** Picks a scorer (surname) from [outs], weighted by Attacking; deterministic in [rng]. */
+private fun pickScorerName(outs: List<Player>, rng: Rng): String {
+    if (outs.isEmpty()) return "Unknown"
+    val weights = outs.map { (it.attacking + 5).toDouble() }
+    var r = rng.nextDouble() * weights.sum()
+    var k = 0
+    for (i in outs.indices) {
+        r -= weights[i]
+        if (r <= 0) { k = i; break }
+    }
+    return outs[k].name.substringAfterLast(' ').ifBlank { outs[k].name }
+}
 
 // Fallback 4-4-2 (fx across 0..1, fy depth with 1=GK .. 0=striker) if FORM.DAT
 // formations are unavailable; matches the convention of data/formations.json.
@@ -90,19 +115,7 @@ fun buildMatchPlan(data: GameData, career: Career): MatchPlan? {
         // The managed club scores from its starting XI; opponents from their squad.
         val squad = if (clubId == career.managedClubId) career.startingSquad(data) else career.squadFor(data, clubId)
         val outs = squad.filter { !it.isGoalkeeper }.ifEmpty { squad }
-        if (outs.isEmpty()) return "Unknown"
-        val weights = outs.map { (it.attacking + 5).toDouble() }
-        var r = rng.nextDouble() * weights.sum()
-        var k = 0
-        for (i in outs.indices) {
-            r -= weights[i]
-            if (r <= 0) {
-                k = i
-                break
-            }
-        }
-        val name = outs[k].name
-        return name.substringAfterLast(' ').ifBlank { name }
+        return pickScorerName(outs, rng)
     }
 
     val events = (homeMin.map { MatchEvent(it, true, scorer(pv.homeId)) } +
@@ -111,6 +124,13 @@ fun buildMatchPlan(data: GameData, career: Career): MatchPlan? {
     val form = data.formations.firstOrNull()?.mapNotNull {
         if (it.size >= 2) it[0] to it[1] else null
     }?.takeIf { it.size == 11 } ?: DEFAULT_FORM
+
+    // managed rosters for in-match subs: the on-pitch XI + the rest of the squad
+    val xi = career.effectiveXIIndices(data)
+    val bench = (career.managedSquadIndices(data) - xi.toSet())
+        .mapNotNull { i -> data.players.getOrNull(i)?.let { i to it.rating } }
+        .sortedByDescending { it.second }
+        .map { it.first }
 
     fun short(name: String?, fallback: String) =
         name?.takeIf { it.isNotBlank() } ?: fallback
@@ -127,6 +147,8 @@ fun buildMatchPlan(data: GameData, career: Career): MatchPlan? {
         seed = pv.seed,
         condition = pv.condition,
         homeIsManaged = pv.homeIsManaged,
+        managedXI = xi,
+        managedBench = bench,
     )
 }
 
@@ -156,6 +178,7 @@ private const val PLAYER_SPEED = 0.42f       // pitch-fractions / sec
 private const val BALL_SPEED = 0.62f
 private const val DIVE_GOAL = 0.95f          // beaten-keeper dive on a goal (seconds)
 private const val DIVE_SAVE = 0.70f          // reflex dive when the ball reaches the box
+private const val MAX_SUBS = 3               // era-faithful: 3 substitutions per match
 
 private class MatchSim(homeForm: List<Pair<Double, Double>>, awayForm: List<Pair<Double, Double>>, seed: Long, private val ballPace: Float = 1f) {
     val n = 22
@@ -361,13 +384,38 @@ fun MatchView(data: GameData, plan: MatchPlan, onFinish: () -> Unit) {
     var speed by remember(plan) { mutableIntStateOf(2) }
     var redraw by remember(plan) { mutableIntStateOf(0) }
 
+    // --- in-match substitutions (managed club only) ---
+    val onField = remember(plan) { mutableStateListOf<Int>().also { it.addAll(plan.managedXI) } }
+    val bench = remember(plan) { mutableStateListOf<Int>().also { it.addAll(plan.managedBench) } }
+    var subsUsed by remember(plan) { mutableIntStateOf(0) }
+    var showSubs by remember(plan) { mutableStateOf(false) }
+    var pickedOff by remember(plan) { mutableStateOf<Int?>(null) }
+
     fun scoreGoal(e: MatchEvent) {
         if (e.home) hScore++ else aScore++
-        last = "GOAL  ${e.minute}'  ${e.scorer}  (${if (e.home) plan.homeShort else plan.awayShort})"
+        // A managed goal after a sub is credited to whoever is on the pitch NOW.
+        val who = if (e.home == plan.homeIsManaged && subsUsed > 0) {
+            val outs = onField.mapNotNull { data.players.getOrNull(it) }.filter { !it.isGoalkeeper }
+            pickScorerName(outs, Rng(plan.seed xor (e.minute * 0x9E3779B1L) xor 0x5151L))
+        } else {
+            e.scorer
+        }
+        last = "GOAL  ${e.minute}'  $who  (${if (e.home) plan.homeShort else plan.awayShort})"
         flashUntil = elapsed + 1700f
         pendingKickoff = e.home
         sim.shootAt(e.home)
         if (e.home == plan.homeIsManaged) audio.goalFor(hScore + aScore) else audio.goalAgainst()
+    }
+
+    fun makeSub(onIdx: Int) {
+        val off = pickedOff ?: return
+        val pos = onField.indexOf(off)
+        if (pos < 0 || onIdx !in bench || subsUsed >= MAX_SUBS) return
+        onField[pos] = onIdx          // the bench player takes the field
+        bench.remove(onIdx)
+        pickedOff = null              // the player coming off cannot return
+        subsUsed++
+        if (subsUsed >= MAX_SUBS || bench.isEmpty()) showSubs = false
     }
 
     LaunchedEffect(plan) {
@@ -378,7 +426,7 @@ fun MatchView(data: GameData, plan: MatchPlan, onFinish: () -> Unit) {
             val now = withFrameNanos { it }
             val dtMs = (now - lastNs) / 1_000_000f
             lastNs = now
-            if (!finished) {
+            if (!finished && !showSubs) {       // the subs panel pauses the match
                 val adv = dtMs * speed
                 elapsed += adv
                 val m = (elapsed / MS_PER_MIN).toInt().coerceAtMost(90)
@@ -500,14 +548,103 @@ fun MatchView(data: GameData, plan: MatchPlan, onFinish: () -> Unit) {
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                 if (!finished) {
+                    if (bench.isNotEmpty() && subsUsed < MAX_SUBS) {
+                        MatchPill("Subs $subsUsed/$MAX_SUBS") { pickedOff = null; showSubs = true }
+                        Spacer(Modifier.padding(end = 8.dp))
+                    }
                     MatchPill("x$speed") { speed = when (speed) { 1 -> 2; 2 -> 4; else -> 1 } }
-                    androidx.compose.foundation.layout.Spacer(Modifier.padding(end = 8.dp))
+                    Spacer(Modifier.padding(end = 8.dp))
                     MatchPill("Skip") { skip() }
                 } else {
                     MatchPill("Continue", primary = true) { onFinish() }
                 }
             }
         }
+
+        if (showSubs && !finished) {
+            SubPanel(
+                data = data,
+                onField = onField,
+                bench = bench,
+                pickedOff = pickedOff,
+                subsUsed = subsUsed,
+                onPickOff = { pickedOff = if (pickedOff == it) null else it },
+                onBringOn = { makeSub(it) },
+                onClose = { showSubs = false; pickedOff = null },
+            )
+        }
+    }
+}
+
+/** The in-match substitution panel: pick a player to take off (left), then a bench
+ *  player to bring on (right). Full-screen scrim; pauses the match while open. */
+@Composable
+private fun SubPanel(
+    data: GameData,
+    onField: List<Int>,
+    bench: List<Int>,
+    pickedOff: Int?,
+    subsUsed: Int,
+    onPickOff: (Int) -> Unit,
+    onBringOn: (Int) -> Unit,
+    onClose: () -> Unit,
+) {
+    Box(
+        Modifier.fillMaxSize().background(Color(0xE605100A)).clickable(onClick = onClose),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            Modifier.widthIn(max = 560.dp).padding(16.dp).clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF0C1F14))
+                // consume taps on the card so they don't fall through to the close-scrim
+                .clickable(onClick = {}).padding(16.dp),
+        ) {
+            Text("Substitutions  $subsUsed/$MAX_SUBS", color = Gold, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (pickedOff == null) "Tap a player to take off." else "Now tap a substitute to bring on.",
+                color = Ink, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                SubColumn("On pitch", onField, Modifier.weight(1f)) { idx ->
+                    SubRow(data, idx, selected = idx == pickedOff) { onPickOff(idx) }
+                }
+                SubColumn("Bench", bench, Modifier.weight(1f)) { idx ->
+                    SubRow(data, idx, selected = false, enabled = pickedOff != null) { onBringOn(idx) }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.End) {
+                MatchPill("Done", primary = true) { onClose() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubColumn(title: String, ids: List<Int>, modifier: Modifier, row: @Composable (Int) -> Unit) {
+    Column(modifier) {
+        Text(title, color = Ink, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 6.dp))
+        Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
+            if (ids.isEmpty()) Text("(none)", color = Ink, style = MaterialTheme.typography.labelMedium)
+            ids.forEach { row(it) }
+        }
+    }
+}
+
+@Composable
+private fun SubRow(data: GameData, idx: Int, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+    val p: Player = data.players.getOrNull(idx) ?: return
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 2.dp).clip(RoundedCornerShape(6.dp))
+            .background(if (selected) Gold else Color(0xFF173A26))
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        val fg = if (selected) Color(0xFF06140D) else if (enabled) Ink else Color(0xFF6F8479)
+        if (p.isGoalkeeper) Text("GK", color = fg, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+        Text(p.name, color = fg, maxLines = 1, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        Text("${p.rating}", color = fg, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
