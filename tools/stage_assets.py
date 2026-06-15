@@ -15,7 +15,8 @@ Merge policy (avoids triplicating the shared European pool):
 
 Club identity is global: ``<LG>-<team_index>`` (LG in EN/FR/DE). A player's club
 key is ``<own LG>-<club_id - 1>`` (club_id is 1-based; see decode_db.py). Players
-with no real club (id 0/255 or out of range) get ``club = null`` -> Free Agents.
+with no real club (id 0/255 or out of range) are the source's free-agent +
+generic filler pool and are DROPPED (every kept player belongs to a real club).
 """
 from __future__ import annotations
 
@@ -80,12 +81,17 @@ def build() -> dict:
         for p in squad:
             club_idx = p["club_id"] - 1  # 1-based -> 0-based team index
             club_key = f"{code}-{club_idx}" if club_idx in known else None
-            if club_key is not None:
-                club = by_index[club_idx]
-                # Drop FR/DE players attached to a European-pool club: those are
-                # duplicates of the English file's canonical European squads.
-                if code != "EN" and club["division"] == EUROPE_DIV:
-                    continue
+            # Skip the unattached pool (club_id 0/255): the source's free-agent +
+            # generic "Euro PlayerN" filler. They belong to no club, can't be
+            # transferred in our club-to-club model, and only duplicate names in
+            # the browse/transfer lists. Real squad players always resolve a club.
+            if club_key is None:
+                continue
+            club = by_index[club_idx]
+            # Drop FR/DE players attached to a European-pool club: those are
+            # duplicates of the English file's canonical European squads.
+            if code != "EN" and club["division"] == EUROPE_DIV:
+                continue
             players.append(
                 {
                     "name": f"{p['first_name']} {p['surname']}".strip(),

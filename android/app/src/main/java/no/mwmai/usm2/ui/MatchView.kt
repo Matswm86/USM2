@@ -274,11 +274,11 @@ private class MatchSim(homeForm: List<Pair<Double, Double>>, awayForm: List<Pair
             if (d <= s) {
                 bx = tx; by = ty
             }
-            decisionT = 0.45f + rng.nextFloat() * 0.85f
-            if (rng.nextFloat() < 0.25f) poss = 1 - poss
-            val dir = if (poss == 0) 1f else -1f
-            tx = (bx + dir * (0.08f + rng.nextFloat() * 0.34f)).coerceIn(0.07f, 0.93f)
-            ty = (by + (rng.nextFloat() - 0.5f) * 0.42f).coerceIn(0.12f, 0.88f)
+            decisionT = 0.6f + rng.nextFloat() * 0.9f
+            if (rng.nextFloat() < 0.22f) poss = 1 - poss
+            val dir = if (poss == 0) 1f else -1f                 // possessor attacks toward his goal
+            tx = (bx + dir * (0.10f + rng.nextFloat() * 0.30f)).coerceIn(0.07f, 0.93f)
+            ty = (by + (rng.nextFloat() - 0.5f) * 0.26f).coerceIn(0.12f, 0.88f)
         } else {
             bx += dx / d * s
             by += dy / d * s
@@ -305,25 +305,29 @@ private class MatchSim(homeForm: List<Pair<Double, Double>>, awayForm: List<Pair
                 moving[i] = false
                 continue
             }
-            val targetX: Float
-            val targetY: Float
-            if (i == carrier || i == presser) {
-                targetX = bx
-                targetY = by
-            } else {
-                val follow = if (gk[i]) 0.12f else 1f
-                targetX = baseX[i] + (bx - 0.5f) * 0.34f * follow
-                targetY = baseY[i] + (by - 0.5f) * 0.22f * follow
+            // Each player heads from his base TOWARD the ball; the pull is strongest
+            // for the two players contesting it and for anyone whose zone the ball is
+            // in, so a knot forms around the ball while the rest hold their shape.
+            val toBallX = bx - baseX[i]
+            val toBallY = by - baseY[i]
+            val distBase = hypot(toBallX, toBallY)
+            val attract = when {
+                i == carrier || i == presser -> 0.90f
+                gk[i] -> 0.06f
+                else -> (0.60f / (1f + 7f * distBase)).coerceIn(0.07f, 0.55f)
             }
+            val targetX = baseX[i] + toBallX * attract
+            val targetY = baseY[i] + toBallY * attract
+            val spd = if (i == carrier || i == presser) move * 1.6f else move
             val mdx = targetX - px[i]
             val mdy = targetY - py[i]
             val md = hypot(mdx, mdy)
             if (md > 1e-4f) {
-                val st = minOf(move, md)
+                val st = minOf(spd, md)
                 px[i] += mdx / md * st
                 py[i] += mdy / md * st
                 vx[i] = mdx
-                moving[i] = st > move * 0.25f
+                moving[i] = st > move * 0.2f
             } else {
                 moving[i] = false
             }
@@ -478,7 +482,7 @@ fun MatchView(data: GameData, plan: MatchPlan, onFinish: () -> Unit) {
             }
             // ball (drawn under the nearest players is fine at this scale)
             val bp = map(sim.bx, sim.by)
-            val br = size.height * (0.010f + 0.008f * sim.by)
+            val br = size.height * (0.005f + 0.004f * sim.by)   // ~half a player-width; was 2x too big
             drawOval(Color(0x55000000), topLeft = Offset(bp.x - br, bp.y - br * 0.4f), size = androidx.compose.ui.geometry.Size(br * 2, br * 0.8f))
             drawCircle(Color.White, radius = br, center = Offset(bp.x, bp.y - br))
             drawCircle(Color(0xFF202020), radius = br, center = Offset(bp.x, bp.y - br), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.2f))

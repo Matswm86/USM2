@@ -39,7 +39,7 @@ It is a playable manager, not just a database browser:
 - **Pick your starting XI** (a weaker eleven fields a weaker side), and make
   **substitutions during the match** (three per game; the clock pauses).
 - **League browser**: England (Premier League down to the Conference), the
-  European club pool, France and Germany. 412 clubs, 8,600+ players, with
+  European club pool, France and Germany. 412 clubs, 7,800+ players, with
   per-player attributes decoded from the original game.
 - **Season rollover**: promotion, relegation and a fresh fixture list across a
   five-tier English pyramid.
