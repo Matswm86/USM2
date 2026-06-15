@@ -48,6 +48,7 @@ import no.mwmai.usm2.Player
 import no.mwmai.usm2.engine.Career
 import no.mwmai.usm2.engine.Fixture
 import no.mwmai.usm2.engine.Standings
+import no.mwmai.usm2.engine.Strength
 import no.mwmai.usm2.engine.TransferLimits
 import no.mwmai.usm2.engine.Valuation
 
@@ -87,6 +88,7 @@ fun RoomHost(
     onRollover: () -> Unit,
     onSign: (Int) -> Unit,
     onSell: (Int) -> Unit,
+    onSetXI: (List<Int>) -> Unit,
     onExit: () -> Unit,
 ) {
     var room by remember { mutableStateOf(Room.OFFICE) }
@@ -135,7 +137,7 @@ fun RoomHost(
             Room.BANK -> SceneArea("img/scene/BANKSCR.png", emptyList()) { BankPanel(data, career) { room = Room.TRANSFERS } }
             Room.DUGOUT -> SceneArea("img/scene/BENCHSCR.png", emptyList()) { MatchCentre(data, career, ::startMatch, onRollover) }
             Room.NEWS -> SceneArea("img/scene/NEWS.png", emptyList()) { NewsStrip(data, career) }
-            Room.TEAM -> TeamContent(data, career)
+            Room.TEAM -> TeamContent(data, career, onSetXI)
             Room.TABLE -> TableContent(data, career)
             Room.TACTICS -> PitchLineup(data, career)
             Room.TRANSFERS -> TransferMarket(data, career, onSign, onSell)
@@ -389,19 +391,64 @@ private fun NewsStrip(data: GameData, career: Career) {
 
 // ---- team & table ----------------------------------------------------------
 
+// Team selection: tap to add/drop players from the starting XI (max 11). The
+// committed XI drives match strength (a weaker XI weakens the side), the Tactics
+// pitch, and who can score. "Auto" reverts to the best XI by rating.
 @Composable
-private fun TeamContent(data: GameData, career: Career) {
-    val squad = remember(career) { career.managedSquad(data) }
-    Column(Modifier.fillMaxSize().padding(8.dp)) {
-        Text("${clubName(data, career, career.managedIndex)} squad", color = Gold, fontWeight = FontWeight.Bold, modifier = Modifier.padding(8.dp))
+private fun TeamContent(data: GameData, career: Career, onSetXI: (List<Int>) -> Unit) {
+    val squad = remember(career) {
+        career.managedSquadIndices(data)
+            .mapNotNull { i -> data.players.getOrNull(i)?.let { IndexedValue(i, it) } }
+            .sortedByDescending { it.value.rating }
+    }
+    val baseline = remember(career) { career.effectiveXIIndices(data).toSet() }
+    var xi by remember(career) { mutableStateOf(career.effectiveXIIndices(data)) }
+    val xiSet = xi.toSet()
+    val xiPlayers = remember(xi) { xi.mapNotNull { data.players.getOrNull(it) } }
+    val full = xi.size == 11
+    val dirty = xiSet != baseline
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().background(Color(0xFF0B3D24)).padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Team selection", color = Gold, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Starting XI ${xi.size}/11 · ATT ${Strength.attack(xiPlayers).toInt()} DEF ${Strength.defence(xiPlayers).toInt()}" +
+                        if (career.selectedXI.isEmpty()) " · auto" else " · manual",
+                    color = Ink,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+            PillButton("Auto", enabled = career.selectedXI.isNotEmpty()) { onSetXI(emptyList()) }
+            Spacer(Modifier.width(6.dp))
+            PillButton("Save", enabled = full && dirty) { onSetXI(xi) }
+        }
         LazyColumn(Modifier.fillMaxSize()) {
-            itemsIndexed(squad) { i, p ->
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${i + 1}", color = Sub, modifier = Modifier.width(28.dp), style = MaterialTheme.typography.bodySmall)
+            itemsIndexed(squad, key = { _, iv -> iv.index }) { _, iv ->
+                val p = iv.value
+                val inXI = iv.index in xiSet
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clickable { xi = if (inXI) xi - iv.index else if (xi.size < 11) xi + iv.index else xi }
+                        .background(if (inXI) Color(0xFF14543A) else Color.Transparent)
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier.size(22.dp).clip(CircleShape).background(if (inXI) Gold else Color(0xFF2A3A30)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (inXI) Text("XI", color = Color(0xFF06140D), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                    }
+                    Spacer(Modifier.width(8.dp))
                     RatingChip(p.rating)
                     Spacer(Modifier.width(10.dp))
-                    Text(p.name, color = Ink, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    if (p.key) Text("★", color = Gold)
+                    Text(p.name, color = Ink, modifier = Modifier.weight(1f), maxLines = 1, style = MaterialTheme.typography.bodyMedium)
+                    if (p.isGoalkeeper) Text("GK", color = Sub, style = MaterialTheme.typography.labelSmall)
+                    if (p.key) Text("  ★", color = Gold)
                     Spacer(Modifier.width(8.dp))
                     Text("age ${p.age}", color = Sub, style = MaterialTheme.typography.bodySmall)
                 }
@@ -560,7 +607,7 @@ private fun TransferRow(p: Player, club: String?, price: String, action: String,
 private fun PitchLineup(data: GameData, career: Career) {
     val forms = data.formations
     var formIdx by remember { mutableStateOf(0) }
-    val squad = remember(career) { career.managedSquad(data) }
+    val squad = remember(career) { career.startingSquad(data) }
     val form = forms.getOrNull(formIdx).orEmpty()
     val gkSlot = remember(form) { form.indices.maxByOrNull { form[it].getOrElse(1) { 0.0 } } ?: 0 }
     val depthOrder = remember(form) { form.indices.sortedByDescending { form[it].getOrElse(1) { 0.0 } } }

@@ -83,7 +83,8 @@ fun buildMatchPlan(data: GameData, career: Career): MatchPlan? {
     // RNG is seeded from the fixture seed so the scorer line replays identically.
     val rng = Rng(pv.seed * 1_099_511_628_211L + 0x2545)
     fun scorer(clubId: String): String {
-        val squad = career.squadFor(data, clubId)
+        // The managed club scores from its starting XI; opponents from their squad.
+        val squad = if (clubId == career.managedClubId) career.startingSquad(data) else career.squadFor(data, clubId)
         val outs = squad.filter { !it.isGoalkeeper }.ifEmpty { squad }
         if (outs.isEmpty()) return "Unknown"
         val weights = outs.map { (it.attacking + 5).toDouble() }

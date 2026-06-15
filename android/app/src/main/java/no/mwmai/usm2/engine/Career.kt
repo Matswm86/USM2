@@ -100,6 +100,10 @@ data class Career(
     val seasonWagesK: Long = 0,
     /** Prize money from the season just completed (set at rollover, for display). */
     val lastSeasonPrizeK: Long = 0,
+    /** The manager's committed starting XI as global player indices. Empty = auto
+     * (best XI by rating). Pruned to the current squad on every transfer; an
+     * incomplete set is auto-filled by rating for strength + display. */
+    val selectedXI: List<Int> = emptyList(),
 ) {
     val totalRounds: Int get() = (fixtures.maxOfOrNull { it.round } ?: -1) + 1
 
@@ -330,6 +334,38 @@ data class Career(
         return (stayed + joined).toSet()
     }
 
+    /** The managed club's effective starting XI as global indices: the committed
+     * [selectedXI] (those still in the squad) first, then the best remaining squad
+     * players by rating, capped at 11. Always 11 when the squad has 11+. */
+    fun effectiveXIIndices(data: GameData): List<Int> {
+        val squadIdx = managedSquadIndices(data)
+        val chosen = selectedXI.filter { it in squadIdx }
+        val chosenSet = chosen.toSet()
+        val fill = squadIdx.filter { it !in chosenSet }
+            .mapNotNull { i -> data.players.getOrNull(i)?.let { i to it.rating } }
+            .sortedByDescending { it.second }
+            .map { it.first }
+        return (chosen + fill).take(11)
+    }
+
+    /** The effective starting XI as players. */
+    fun effectiveXI(data: GameData): List<Player> =
+        effectiveXIIndices(data).mapNotNull { data.players.getOrNull(it) }
+
+    /** The squad the managed club's strength + lineup come from: the chosen XI when
+     * a selection is committed, otherwise the full squad (best-XI auto, the tuned
+     * baseline left untouched). */
+    fun startingSquad(data: GameData): List<Player> =
+        if (selectedXI.isEmpty()) squadFor(data, managedClubId) else effectiveXI(data)
+
+    /** Commits a manual starting XI (validated to the current squad, capped at 11)
+     * and re-rates the managed strength from it. Empty list reverts to auto. */
+    fun setXI(data: GameData, xi: List<Int>): Career {
+        val squadIdx = managedSquadIndices(data)
+        val valid = xi.distinct().filter { it in squadIdx }.take(11)
+        return copy(selectedXI = valid).recomputeStrength(data, managedClubId)
+    }
+
     /** Signs [playerIndex] into the managed club for [feeK], debiting the budget and
      * recomputing both clubs' strengths. Caller checks affordability / squad cap. */
     fun signPlayer(data: GameData, playerIndex: Int, feeK: Long): Career =
@@ -350,6 +386,8 @@ data class Career(
             budget = (budget + budgetDelta).coerceAtLeast(0L),
             transfers = transfers + Transfer(playerIndex, toClub, feeK),
         )
+        // Drop any committed starter who is no longer in the squad before re-rating.
+        c = c.copy(selectedXI = selectedXI.filter { it in c.managedSquadIndices(data) })
         for (cid in listOfNotNull(from, toClub).distinct()) c = c.recomputeStrength(data, cid)
         // Every transfer changes the managed squad, so re-rate the wage bill.
         return c.copy(wageBillPerMatchK = Finance.wageBillPerMatchK(c.managedSquad(data)))
@@ -359,7 +397,9 @@ data class Career(
      * pyramid map (for rollover sims) and, if it is in the active division, the live
      * per-club arrays + [leagueGap] that the goals model reads. */
     private fun recomputeStrength(data: GameData, clubId: String): Career {
-        val squad = squadFor(data, clubId)
+        // The managed club is rated on its starting XI (so picking a weaker team
+        // weakens it); every other club on its full squad's best XI.
+        val squad = if (clubId == managedClubId) startingSquad(data) else squadFor(data, clubId)
         val triple = ClubStrength(Strength.of(squad), Strength.attack(squad), Strength.defence(squad))
         val cs = if (clubStrengths.containsKey(clubId)) clubStrengths + (clubId to triple) else clubStrengths
         val ai = clubIds.indexOf(clubId)

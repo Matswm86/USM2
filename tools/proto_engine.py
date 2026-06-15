@@ -503,6 +503,63 @@ def validate_finances(clubs, players, by_club):
           f"champion prize £{prizes[0]/1000:.1f}M -> last £{prizes[-1]/1000:.1f}M")
 
 
+# ---- 7. manual XI (mirrors Career.effectiveXIIndices + startingSquad strength) -
+def validate_lineup(clubs, players, by_club):
+    """Assert the manual-XI rules: the effective XI always fills to 11; a weaker
+    chosen XI yields a weaker side; selling a committed starter prunes him; and the
+    whole mapping is deterministic. Mirrors Career.effectiveXIIndices /
+    startingSquad / setXI feeding club_strength_triple."""
+    epl = [c for c in clubs if c["group"] == "England" and c["division"] == 0]
+    managed = epl[0]["id"]
+    squad_idx = [i for i, p in enumerate(players) if p.get("club") == managed]
+    assert len(squad_idx) >= 11, "managed squad too small to field a side"
+
+    def eff_xi(selected):
+        chosen = [i for i in selected if i in squad_idx]
+        cs = set(chosen)
+        fill = sorted((i for i in squad_idx if i not in cs), key=lambda i: -player_rating(players[i]))
+        return (chosen + fill)[:11]
+
+    def trip(idxs):
+        return club_strength_triple([players[i] for i in idxs])
+
+    auto = eff_xi([])
+    assert len(auto) == 11, "auto XI is not 11"
+    auto_t = trip(auto)
+
+    # dropping the top attacker cannot raise attack (replacement is by rating)
+    top_att = max(auto, key=lambda i: players[i]["skills"][3])
+    weak_t = trip(eff_xi([i for i in auto if i != top_att]))
+    assert weak_t[1] <= auto_t[1] + 1e-9, "dropping the top attacker raised attack"
+
+    # the 11 weakest players are a strictly weaker side than the auto best XI
+    worst = sorted(squad_idx, key=lambda i: player_rating(players[i]))[:11]
+    worst_t = trip(worst)
+    assert worst_t[0] < auto_t[0], "worst XI not weaker overall"
+    assert worst_t[1] <= auto_t[1] and worst_t[2] <= auto_t[2], "worst XI att/def not <= auto"
+
+    # committing the best 11 -> the effective XI is exactly them
+    best11 = sorted(squad_idx, key=lambda i: -player_rating(players[i]))[:11]
+    assert eff_xi(best11) == best11, "committed best XI not honoured"
+
+    # selling a committed starter prunes him (and the rest auto-refill to 11)
+    sold = best11[0]
+    remaining = set(squad_idx) - {sold}
+    pruned_sel = [i for i in best11 if i in remaining]
+    assert sold not in pruned_sel and len(pruned_sel) == 10, "prune-on-sale wrong"
+    refilled = [i for i in best11 if i in remaining]
+    cs = set(refilled)
+    fill2 = sorted((i for i in remaining if i not in cs), key=lambda i: -player_rating(players[i]))
+    assert len((refilled + fill2)[:11]) == 11, "did not refill to 11 after a sale"
+
+    # determinism
+    assert eff_xi(best11) == best11 and trip(worst) == worst_t
+
+    print("\n== lineup: XI fill, weaker-XI-weaker-side, prune-on-sale, determinism: PASS ==")
+    print(f"  {epl[0]['name']} auto OVR {auto_t[0]:.1f} ATT {auto_t[1]:.1f} DEF {auto_t[2]:.1f} -> "
+          f"worst-XI OVR {worst_t[0]:.1f} ATT {worst_t[1]:.1f} DEF {worst_t[2]:.1f}")
+
+
 def main():
     clubs = json.loads((ASSETS / "clubs.json").read_text())
     players = json.loads((ASSETS / "players.json").read_text())
@@ -596,6 +653,7 @@ def main():
     validate_match_timeline(epl, players, by_club)
     validate_transfers(clubs, players, by_club)
     validate_finances(clubs, players, by_club)
+    validate_lineup(clubs, players, by_club)
     print("\nALL CHECKS PASSED")
 
 

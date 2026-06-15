@@ -149,6 +149,15 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         persist(next)
     }
 
+    /** Commits a manual starting XI (global player indices); empty reverts to auto. */
+    fun setLineup(xi: List<Int>) {
+        val data = readyData() ?: return
+        val c = _career.value ?: return
+        val next = c.setXI(data, xi)
+        _career.value = next
+        persist(next)
+    }
+
     /** Abandons the current career and deletes the save. */
     fun quitCareer() {
         _career.value = null
