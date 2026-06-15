@@ -63,6 +63,7 @@ data class MatchPlan(
     val awayForm: List<Pair<Double, Double>>,
     val seed: Long,
     val condition: PitchCondition,
+    val homeIsManaged: Boolean,
 )
 
 // Fallback 4-4-2 (fx across 0..1, fy depth with 1=GK .. 0=striker) if FORM.DAT
@@ -124,6 +125,7 @@ fun buildMatchPlan(data: GameData, career: Career): MatchPlan? {
         awayForm = form,
         seed = pv.seed,
         condition = pv.condition,
+        homeIsManaged = pv.homeIsManaged,
     )
 }
 
@@ -306,6 +308,7 @@ fun MatchView(data: GameData, plan: MatchPlan, onFinish: () -> Unit) {
     val awayIdle = rememberAssetImage("img/match/a_idle.png")
     val q = data.pitchQuad
 
+    val audio = rememberMatchAudio()
     val sim = remember(plan) { MatchSim(plan.homeForm, plan.awayForm, plan.seed, ballPaceFor(plan.condition)) }
     var elapsed by remember(plan) { mutableFloatStateOf(0f) }
     var minute by remember(plan) { mutableIntStateOf(0) }
@@ -325,9 +328,12 @@ fun MatchView(data: GameData, plan: MatchPlan, onFinish: () -> Unit) {
         flashUntil = elapsed + 1700f
         pendingKickoff = e.home
         sim.shootAt(e.home)
+        if (e.home == plan.homeIsManaged) audio.goalFor(hScore + aScore) else audio.goalAgainst()
     }
 
     LaunchedEffect(plan) {
+        audio.welcome()
+        audio.whistle() // kick-off
         var lastNs = withFrameNanos { it }
         while (true) {
             val now = withFrameNanos { it }
@@ -344,12 +350,14 @@ fun MatchView(data: GameData, plan: MatchPlan, onFinish: () -> Unit) {
                 pendingKickoff?.let { who ->
                     if (elapsed >= flashUntil) {
                         sim.kickoff(who); pendingKickoff = null
+                        audio.whistle() // restart after the goal
                     }
                 }
                 sim.step(minOf(adv / 1000f, 0.05f))
                 if (elapsed >= MS_PER_MIN * 90f) {
                     finished = true
                     last = "Full time  ${plan.homeShort} ${plan.homeGoals} - ${plan.awayGoals} ${plan.awayShort}"
+                    audio.fullTime()
                 }
             }
             redraw++
@@ -365,6 +373,7 @@ fun MatchView(data: GameData, plan: MatchPlan, onFinish: () -> Unit) {
         elapsed = MS_PER_MIN * 90f
         finished = true
         last = "Full time  ${plan.homeShort} ${plan.homeGoals} - ${plan.awayGoals} ${plan.awayShort}"
+        audio.fullTime()
     }
 
     Box(Modifier.fillMaxSize().background(Color(0xFF06140D))) {
