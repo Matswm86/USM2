@@ -29,6 +29,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -153,6 +154,8 @@ private fun ballPaceFor(c: PitchCondition): Float = when (c) {
 private const val MS_PER_MIN = 520f          // real ms per match-minute at 1x
 private const val PLAYER_SPEED = 0.42f       // pitch-fractions / sec
 private const val BALL_SPEED = 0.62f
+private const val DIVE_GOAL = 0.95f          // beaten-keeper dive on a goal (seconds)
+private const val DIVE_SAVE = 0.70f          // reflex dive when the ball reaches the box
 
 private class MatchSim(homeForm: List<Pair<Double, Double>>, awayForm: List<Pair<Double, Double>>, seed: Long, private val ballPace: Float = 1f) {
     val n = 22
@@ -160,9 +163,14 @@ private class MatchSim(homeForm: List<Pair<Double, Double>>, awayForm: List<Pair
     val py = FloatArray(n)
     val vx = FloatArray(n)
     val moving = BooleanArray(n)
+    val diveT = FloatArray(n)        // >0 while a keeper is mid-dive (cosmetic only)
+    val diveDur = FloatArray(n)      // the dive's full duration, for render progress
+    val diveSign = FloatArray(n)     // -1 dives toward the top post, +1 toward the bottom
     private val baseX = FloatArray(n)
     private val baseY = FloatArray(n)
     private val gk = BooleanArray(n)
+    private var homeGk = 0
+    private var awayGk = 11
     var bx = 0.5f
     var by = 0.5f
     private var tx = 0.5f
@@ -184,6 +192,7 @@ private class MatchSim(homeForm: List<Pair<Double, Double>>, awayForm: List<Pair
             baseX[i] = if (home) 0.07f + depth * 0.40f else 0.93f - depth * 0.40f
             baseY[i] = (0.12 + fx * 0.76).toFloat()
             gk[i] = k == gkSlot
+            if (k == gkSlot) { if (home) homeGk = i else awayGk = i }
             px[i] = baseX[i]
             py[i] = baseY[i]
         }
@@ -209,6 +218,8 @@ private class MatchSim(homeForm: List<Pair<Double, Double>>, awayForm: List<Pair
         ty = 0.5f
         poss = if (home) 0 else 1
         decisionT = 1.2f
+        // the beaten keeper throws himself at it: the side NOT scoring concedes.
+        startDive(if (home) awayGk else homeGk, by, DIVE_GOAL)
     }
 
     /** Centre-spot restart after a goal; the conceding side kicks off. */
@@ -216,6 +227,17 @@ private class MatchSim(homeForm: List<Pair<Double, Double>>, awayForm: List<Pair
         bx = 0.5f; by = 0.5f; tx = 0.5f; ty = 0.5f
         poss = if (scoredHome) 1 else 0
         decisionT = 0.3f
+    }
+
+    /** Begin a cosmetic keeper dive toward [ballY]'s side (random if dead-centre). */
+    private fun startDive(i: Int, ballY: Float, dur: Float) {
+        diveSign[i] = when {
+            kotlin.math.abs(ballY - 0.5f) < 0.04f -> if (rng.nextBoolean()) 1f else -1f
+            ballY < 0.5f -> -1f
+            else -> 1f
+        }
+        diveDur[i] = dur
+        diveT[i] = dur
     }
 
     fun step(dt: Float) {
@@ -239,10 +261,27 @@ private class MatchSim(homeForm: List<Pair<Double, Double>>, awayForm: List<Pair
             by += dy / d * s
         }
 
+        // reflex keeper dive once play reaches the goalmouth (cosmetic, no save logic)
+        if (rng.nextFloat() < 0.012f) {
+            if (bx > 0.86f && diveT[awayGk] <= 0f) startDive(awayGk, by, DIVE_SAVE)
+            else if (bx < 0.14f && diveT[homeGk] <= 0f) startDive(homeGk, by, DIVE_SAVE)
+        }
+
         val carrier = nearest(poss == 0)
         val presser = nearest(poss != 0)
         val move = PLAYER_SPEED * dt
         for (i in 0 until n) {
+            if (gk[i] && diveT[i] > 0f) {
+                diveT[i] -= dt
+                val goalX = if (i < 11) 0.05f else 0.95f
+                val tgtY = 0.5f + diveSign[i] * 0.30f
+                px[i] += (goalX - px[i]) * minOf(1f, 9f * dt)
+                py[i] += (tgtY - py[i]) * minOf(1f, 7f * dt)
+                py[i] = py[i].coerceIn(0.16f, 0.84f)
+                vx[i] = 0f
+                moving[i] = false
+                continue
+            }
             val targetX: Float
             val targetY: Float
             if (i == carrier || i == presser) {
@@ -401,8 +440,11 @@ fun MatchView(data: GameData, plan: MatchPlan, onFinish: () -> Unit) {
             val order = (0 until sim.n).sortedBy { sim.py[it] }
             for (i in order) {
                 val home = i < 11
-                val mv = sim.moving[i]
+                val diving = sim.diveT[i] > 0f
+                val mv = sim.moving[i] && !diving
                 val bmp = when {
+                    diving && home -> homeIdle
+                    diving -> awayIdle
                     mv && home -> homeRun[frame]
                     mv && !home -> awayRun[frame]
                     home -> homeIdle
@@ -413,7 +455,12 @@ fun MatchView(data: GameData, plan: MatchPlan, onFinish: () -> Unit) {
                 val hPx = size.height * 0.072f * persp
                 val wPx = hPx * 30f / 32f
                 val faceRight = if (mv) sim.vx[i] > 0f else home
-                drawSprite(bmp, pos, wPx, hPx, faceRight)
+                // tip the diving keeper toward his post (out-and-up over the dive)
+                val lean = if (diving) {
+                    val prog = (1f - sim.diveT[i] / sim.diveDur[i].coerceAtLeast(0.001f)).coerceIn(0f, 1f)
+                    sim.diveSign[i] * 78f * kotlin.math.sin(prog * Math.PI.toFloat())
+                } else 0f
+                drawSprite(bmp, pos, wPx, hPx, faceRight, lean)
             }
         }
 
@@ -464,16 +511,18 @@ fun MatchView(data: GameData, plan: MatchPlan, onFinish: () -> Unit) {
     }
 }
 
-private fun DrawScope.drawSprite(bmp: ImageBitmap, feet: Offset, w: Float, h: Float, faceRight: Boolean) {
+private fun DrawScope.drawSprite(bmp: ImageBitmap, feet: Offset, w: Float, h: Float, faceRight: Boolean, leanDeg: Float = 0f) {
     val dstOffset = IntOffset((feet.x - w / 2f).toInt(), (feet.y - h).toInt())
     val dstSize = IntSize(w.toInt().coerceAtLeast(1), h.toInt().coerceAtLeast(1))
     val src = IntSize(bmp.width, bmp.height)
-    if (faceRight) {
-        scale(scaleX = -1f, scaleY = 1f, pivot = feet) {
+    rotate(degrees = leanDeg, pivot = feet) {
+        if (faceRight) {
+            scale(scaleX = -1f, scaleY = 1f, pivot = feet) {
+                drawImage(bmp, srcOffset = IntOffset.Zero, srcSize = src, dstOffset = dstOffset, dstSize = dstSize)
+            }
+        } else {
             drawImage(bmp, srcOffset = IntOffset.Zero, srcSize = src, dstOffset = dstOffset, dstSize = dstSize)
         }
-    } else {
-        drawImage(bmp, srcOffset = IntOffset.Zero, srcSize = src, dstOffset = dstOffset, dstSize = dstSize)
     }
 }
 

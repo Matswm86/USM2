@@ -85,8 +85,25 @@ live in the EXE blit code.
 | **POINTER.SPR** | PAK2 | 4864 = 16×16 × 19 | **DONE.** Clean 16×16 grid: frame 0 = arrow cursor, frame 2 = red **OK** button, frames 3-18 = the animated wait-stopwatch. `decode_sprites.py POINTER.SPR --frame 16x16 --transparent 0`. Verified visually (`decoded/sprites/pointer.contact.png`). |
 | TOOLS.BIT | PAK2 | 59160 | **Deferred.** A bank of gold-bevelled toolbar/desk icons (visible as a framed-icon grid at any width). 59160 = 2³·3·5·17·29 → NOT one rectangle; variable-size frames. Autocorrelation peaks at ~26 px with 52/78/104 harmonics, but no global clean width → per-frame dims must come from the EXE blit table. **Low marginal value**: the toolbar is already baked into every `*.PIC`; TOOLS.BIT only adds pressed/highlight states. |
 | MANAGERS.BIT | raw (not PAK2/PAK1) | 14720 | **Unknown format.** Header is all-zeros (no PAK magic); renders as noise at every clean width (32/46/64/92/160…). Not raw indexed pixels in row order. Defer — probably a different pack or per-record structure; trace the load in the EXE if manager portraits are wanted. |
-| PITCH.SPR | PAK2 | 710568 | Decompresses fine; for the **Phase-3 match renderer** (the animated pitch). Slice when that view exists. |
+| PITCH.SPR | PAK2 | 710568 | **Player block DONE** (frames 0..237 @ 30×32 row-major, verified by render — run cycle 15-19, idle 1). **Ball/keeper block (offset ≥228480, ~482 KB) NOT recoverable as a grid** — see below. |
 | GROUND.BIT | PAK2 | 396336 | Decompresses fine; crowd/ground sprites for the match/stadium view. Phase-3. |
+
+### PITCH.SPR ball/keeper tail — investigated, blocked (2026-06-15 session 17)
+
+The 30×32 row-major player grid runs clean through **frame 237** (`228480` B); the
+remaining ~482 KB is the keeper + ball + turf block. It is **not a row-major bitmap
+at any frame width**: rendering at the autocorrelation winners (30/32) shears into
+diagonal noise, and the vertical-adjacency coherence (fraction of vertically
+neighbouring equal non-zero pixels) is **≈ 0.00 at every width 30..96 and every
+±8-byte phase** — a true bitmap scores 0.3-0.6. So the tail is stored differently
+from the players (planar/mode-X interleave or per-sprite RLE records) and its frame
+dims live in the EXE blit code. **Do not re-run width sweeps** — they are exhausted.
+To recover the real ball/keeper sprites, disassemble the PITCH.SPR blit at the match
+draw call in USM2E.EXE (the only remaining path), or sample the live game frame-grab.
+
+**Decision: not worth it.** The drawn white ball (circle + ground shadow) reads
+cleaner than a ~6 px 1996 ball upscaled, and **keepers now dive via faked Kotlin**
+(`MatchSim`, session 17) rather than a sprite. The real sprites would be marginal.
 
 ## What's left for faithful art
 
