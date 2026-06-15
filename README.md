@@ -1,4 +1,4 @@
-# USM2 — Ultimate Soccer Manager 2, rebuilt for Android
+# USM2: Ultimate Soccer Manager 2, rebuilt for Android
 
 A native Android (Kotlin / Jetpack Compose) reconstruction of the 1997 DOS
 football-management classic **Ultimate Soccer Manager 2**, re-laid for touch.
@@ -31,12 +31,12 @@ It is a playable manager, not just a database browser:
   scoreboard and goal ticker. The animated scoreline always matches the result
   the engine records.
 - **Weather**: matches are played on dry, muddy, wet or frozen pitches
-  (deterministic per fixture, cosmetic only) — and **goalkeepers dive**.
+  (deterministic per fixture, cosmetic only), and **goalkeepers dive**.
 - **Crowd audio** from the original game's own sounds: welcome, kick-off
   whistle, a roar when you score, a groan when you concede, full-time whistle.
 - **Transfers & a living budget**: buy and sell from the office phone against a
   real balance that moves with wages, gate receipts and prize money.
-- **Pick your starting XI** — a weaker eleven fields a weaker side — and make
+- **Pick your starting XI** (a weaker eleven fields a weaker side), and make
   **substitutions during the match** (three per game; the clock pauses).
 - **League browser**: England (Premier League down to the Conference), the
   European club pool, France and Germany. 412 clubs, 8,600+ players, with
@@ -46,9 +46,9 @@ It is a playable manager, not just a database browser:
 
 ## Roadmap
 
-1. **Decode the original assets** — database and all screen artwork. ✅
-2. **UI shell** — office, league/squad browser, player detail, transfers. ✅
-3. **Match & management engine** — fixtures, tables, transfers, finances,
+1. **Decode the original assets**: database and all screen artwork. ✅
+2. **UI shell**: office, league/squad browser, player detail, transfers. ✅
+3. **Match & management engine**: fixtures, tables, transfers, finances,
    manual line-up, season rollover, and an animated match view with weather,
    crowd audio and diving keepers. ✅
 4. **More depth (optional):** AI clubs making their own transfers and wider
