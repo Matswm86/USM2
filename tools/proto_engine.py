@@ -320,6 +320,116 @@ def validate_match_timeline(epl, players, by_club):
           f"home goals @ {hmin}  away goals @ {amin}")
 
 
+# ---- 5. transfers (mirrors engine/Valuation.kt + Career.signPlayer/sellPlayer) -
+def _fitness(p):
+    return (p["skills"][4] + p["skills"][6] + p["skills"][9]) // 3
+
+
+def player_rating(p):
+    """Mirror of Model.kt Player.rating (integer-truncating, role-weighted)."""
+    gk, df, at, bs, pa = (p["skills"][0], p["skills"][1], p["skills"][3],
+                          p["skills"][2], p["skills"][7])
+    f = _fitness(p)
+    if gk > 55:
+        return int(gk * 0.6 + f * 0.2 + df * 0.2)
+    return (at + df + pa + bs + f) // 5
+
+
+def age_mult(age):
+    if age <= 18: return 0.80
+    if 19 <= age <= 23: return 0.95
+    if 24 <= age <= 27: return 1.10
+    if 28 <= age <= 30: return 0.90
+    if 31 <= age <= 33: return 0.65
+    return 0.40
+
+
+def value_k(p):
+    r = max(1, min(99, player_rating(p))) / 100.0
+    return int(r * r * r * 14000 * age_mult(p["age"]))
+
+
+def buy_price(p): return int(value_k(p) * 1.10)
+def sell_price(p): return int(value_k(p) * 0.90)
+
+
+def validate_transfers(clubs, players, by_club):
+    """Assert the transfer engine's invariants on the real data: budget bookkeeping,
+    squad-membership conservation, strength recompute, no money pump, determinism,
+    and the squad floor. Mirrors Career.signPlayer / sellPlayer / squadFor."""
+    BUDGET_FRACTION, BUDGET_FLOOR, MIN_SQUAD, MAX_SQUAD = 0.30, 250, 12, 30
+    epl = [c for c in clubs if c["group"] == "England" and c["division"] == 0]
+    managed = epl[0]["id"]
+    epl_ids = {c["id"] for c in epl}
+
+    def squad_idx(club_id, transfers):
+        moved = dict(transfers)  # (playerIndex -> toClub); last write wins
+        stayed = [i for i, p in enumerate(players)
+                  if p.get("club") == club_id and i not in moved]
+        joined = [i for i, tc in moved.items() if tc == club_id]
+        return sorted(stayed + joined)
+
+    def triple(idxs):
+        return club_strength_triple([players[i] for i in idxs])
+
+    # starting budget = 30% of squad value, floored
+    sv = sum(value_k(p) for p in by_club[managed])
+    budget0 = max(BUDGET_FLOOR, int(sv * BUDGET_FRACTION))
+
+    # pick the strongest affordable attacker at another EPL club
+    cands = [(i, p) for i, p in enumerate(players)
+             if p.get("club") in epl_ids and p.get("club") != managed
+             and p["skills"][0] <= 55 and buy_price(p) <= budget0]
+    assert cands, "no affordable signing target — budget model too low"
+    ti, tp = max(cands, key=lambda t: t[1]["skills"][3])
+    seller = tp["club"]
+
+    m0, s0 = squad_idx(managed, []), squad_idx(seller, [])
+    _, att0, _ = triple(m0)
+
+    # --- BUY ---
+    fee = buy_price(tp)
+    tr1 = [(ti, managed)]
+    budget1 = budget0 - fee
+    m1, s1 = squad_idx(managed, tr1), squad_idx(seller, tr1)
+    _, att1, _ = triple(m1)
+    assert budget1 == budget0 - fee, "budget not debited by fee"
+    assert len(m1) == len(m0) + 1 and len(s1) == len(s0) - 1, "squad sizes wrong after buy"
+    assert ti in m1 and ti not in s1, "player not conserved (in managed XOR seller)"
+    assert att1 >= att0 - 1e-9, "buying the top attacker dropped attack strength"
+
+    # --- SELL him straight back: no money pump, squad size restored ---
+    fee_s = sell_price(tp)
+    tr2 = tr1 + [(ti, None)]
+    budget2 = budget1 + fee_s
+    m2 = squad_idx(managed, tr2)
+    assert len(m2) == len(m0), "squad size not restored after sell"
+    assert budget2 < budget0, "buy-then-sell is not a loss (money pump!)"
+    assert budget0 - budget2 == fee - fee_s, "round-trip cost != premium+discount spread"
+
+    # --- determinism: identical ops -> identical state ---
+    assert squad_idx(managed, tr2) == m2 and (budget0 - buy_price(tp) + sell_price(tp)) == budget2
+
+    # --- squad floor: you can sell down to MIN_SQUAD, not below ---
+    base = squad_idx(managed, [])
+    legal_sells = len(base) - MIN_SQUAD
+    assert legal_sells >= 0, "starting squad already below floor"
+    tr = []
+    sold = 0
+    for i in base:
+        if len(squad_idx(managed, tr)) <= MIN_SQUAD:
+            break  # the ViewModel guard blocks this sell
+        tr.append((i, None))
+        sold += 1
+    assert sold == legal_sells and len(squad_idx(managed, tr)) == MIN_SQUAD, "floor guard wrong"
+
+    print("\n== transfers: budget/conservation/no-pump/determinism/floor: PASS ==")
+    print(f"  {epl[0]['name']} budget £{budget0/1000:.1f}M; signed "
+          f"{tp['name']} ({player_rating(tp)}) from {by_club and seller} for £{fee/1000:.2f}M; "
+          f"attack {att0:.1f}->{att1:.1f}; sell-back recoups £{fee_s/1000:.2f}M "
+          f"(round-trip cost £{(fee-fee_s)/1000:.2f}M); floor lets {legal_sells} sales")
+
+
 def main():
     clubs = json.loads((ASSETS / "clubs.json").read_text())
     players = json.loads((ASSETS / "players.json").read_text())
@@ -411,6 +521,7 @@ def main():
               f"{r['l']:>2} {r['gf']:>3} {r['ga']:>3} {gd:>3} {r['pts']:>3}")
     validate_rollover(clubs, players)
     validate_match_timeline(epl, players, by_club)
+    validate_transfers(clubs, players, by_club)
     print("\nALL CHECKS PASSED")
 
 

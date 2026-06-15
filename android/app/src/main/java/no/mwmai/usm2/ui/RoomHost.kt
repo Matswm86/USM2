@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -47,6 +48,8 @@ import no.mwmai.usm2.Player
 import no.mwmai.usm2.engine.Career
 import no.mwmai.usm2.engine.Fixture
 import no.mwmai.usm2.engine.Standings
+import no.mwmai.usm2.engine.TransferLimits
+import no.mwmai.usm2.engine.Valuation
 
 private val Ink = Color(0xFFE8F0E8)
 private val Sub = Color(0xFFB7C7BC)
@@ -56,7 +59,7 @@ private val PitchGreen = Color(0xFF2E7D43)
 private val ShirtRed = Color(0xFFC62828)
 private val Gold = Color(0xFFE7C84A)
 
-enum class Room { OFFICE, BOARDROOM, DUGOUT, BANK, NEWS, TEAM, TABLE, TACTICS }
+enum class Room { OFFICE, BOARDROOM, DUGOUT, BANK, NEWS, TEAM, TABLE, TACTICS, TRANSFERS }
 
 /** A clickable region in scene-image space (fractions of the displayed scene). */
 private class Hotspot(
@@ -82,6 +85,8 @@ fun RoomHost(
     career: Career,
     onPlayMatch: () -> Unit,
     onRollover: () -> Unit,
+    onSign: (Int) -> Unit,
+    onSell: (Int) -> Unit,
     onExit: () -> Unit,
 ) {
     var room by remember { mutableStateOf(Room.OFFICE) }
@@ -127,12 +132,13 @@ fun RoomHost(
         when (room) {
             Room.OFFICE -> SceneArea("img/scene/MANASCR.png", officeObjects { room = it })
             Room.BOARDROOM -> SceneArea("img/scene/CHAIRSCR.png", emptyList())
-            Room.BANK -> SceneArea("img/scene/BANKSCR.png", emptyList()) { BankPanel(data, career) }
+            Room.BANK -> SceneArea("img/scene/BANKSCR.png", emptyList()) { BankPanel(data, career) { room = Room.TRANSFERS } }
             Room.DUGOUT -> SceneArea("img/scene/BENCHSCR.png", emptyList()) { MatchCentre(data, career, ::startMatch, onRollover) }
             Room.NEWS -> SceneArea("img/scene/NEWS.png", emptyList()) { NewsStrip(data, career) }
             Room.TEAM -> TeamContent(data, career)
             Room.TABLE -> TableContent(data, career)
             Room.TACTICS -> PitchLineup(data, career)
+            Room.TRANSFERS -> TransferMarket(data, career, onSign, onSell)
         }
     }
 }
@@ -210,7 +216,7 @@ private fun HotspotBox(w: Dp, h: Dp, fx: Float, fy: Float, fw: Float, fh: Float,
 private fun officeObjects(go: (Room) -> Unit): List<Hotspot> = listOf(
     Hotspot(0.031f, 0.027f, 0.141f, 0.275f, "Noticeboard") { go(Room.NEWS) },
     Hotspot(0.234f, 0.016f, 0.281f, 0.297f, "Window: the stadium") {},
-    Hotspot(0.242f, 0.382f, 0.320f, 0.275f, "Phone: transfers (coming soon)") {},
+    Hotspot(0.242f, 0.382f, 0.320f, 0.275f, "Phone: transfer market") { go(Room.TRANSFERS) },
     Hotspot(0.563f, 0.176f, 0.094f, 0.435f, "Filing cabinet: squad") { go(Room.TEAM) },
     Hotspot(0.672f, 0.062f, 0.141f, 0.160f, "Team photo: squad") { go(Room.TEAM) },
     Hotspot(0.719f, 0.268f, 0.156f, 0.206f, "TV: league table") { go(Room.TABLE) },
@@ -314,26 +320,31 @@ private fun seasonOutcomeLabel(career: Career): String? {
 // block is zeroed until a new game initialises it), so these are honest figures
 // derived from the real squad attributes, not invented "decoded" numbers.
 @Composable
-private fun BankPanel(data: GameData, career: Career) {
+private fun BankPanel(data: GameData, career: Career, onOpenTransfers: () -> Unit) {
     val club = data.clubsById[career.managedClubId]
-    val squad = remember(career.managedClubId) { data.squad(career.managedClubId) }
-    val valueK = remember(career.managedClubId) { squad.sumOf { playerValueK(it) } }
+    val squad = remember(career) { career.managedSquad(data) }
+    val valueK = remember(career) { squad.sumOf { Valuation.valueK(it) } }
     val avg = if (squad.isNotEmpty()) squad.map { it.rating }.average().toInt() else 0
     val prized = squad.maxByOrNull { it.rating }
     Column(
         Modifier.fillMaxWidth().background(Color(0xE60A1810)).padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
-        Text("Finances", color = Gold, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Finances", color = Gold, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.weight(1f))
+            PillButton("Transfer market", onClick = onOpenTransfers)
+        }
         Spacer(Modifier.height(6.dp))
+        FinanceRow("Transfer budget", money(career.budget))
         FinanceRow("Club", club?.name ?: "-")
         FinanceRow("Stadium", club?.stadium ?: "-")
         FinanceRow("Tier", "${career.divisionName} · S${career.season}")
         FinanceRow("Squad value (est.)", money(valueK))
         FinanceRow("Squad", "${squad.size} players · avg rating $avg")
-        prized?.let { FinanceRow("Prize asset", "${it.name} (${it.rating}) · ${money(playerValueK(it))}") }
+        prized?.let { FinanceRow("Prize asset", "${it.name} (${it.rating}) · ${money(Valuation.valueK(it))}") }
         Spacer(Modifier.height(4.dp))
         Text(
-            "Estimates from real squad ratings; the seed DB carries no balance.",
+            "Budget + values are estimates from the real squad ratings; the seed DB carries no balance.",
             color = Sub,
             style = MaterialTheme.typography.labelSmall,
         )
@@ -346,12 +357,6 @@ private fun FinanceRow(label: String, value: String) {
         Text(label, color = Sub, modifier = Modifier.width(150.dp), style = MaterialTheme.typography.bodySmall)
         Text(value, color = Ink, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
     }
-}
-
-/** A player's transfer value in £k, from his real overall rating (steep curve). */
-private fun playerValueK(p: Player): Long {
-    val r = p.rating.coerceIn(1, 99) / 100.0
-    return (r * r * r * 14_000).toLong()
 }
 
 private fun money(k: Long): String =
@@ -384,7 +389,7 @@ private fun NewsStrip(data: GameData, career: Career) {
 
 @Composable
 private fun TeamContent(data: GameData, career: Career) {
-    val squad = remember(career.managedClubId) { data.squad(career.managedClubId) }
+    val squad = remember(career) { career.managedSquad(data) }
     Column(Modifier.fillMaxSize().padding(8.dp)) {
         Text("${clubName(data, career, career.managedIndex)} squad", color = Gold, fontWeight = FontWeight.Bold, modifier = Modifier.padding(8.dp))
         LazyColumn(Modifier.fillMaxSize()) {
@@ -453,17 +458,111 @@ private fun TableContent(data: GameData, career: Career) {
     }
 }
 
+// ---- transfers: buy from any league / sell from the squad ------------------
+
+/**
+ * The office phone: a buy/sell market over the whole world DB. Buying spends the
+ * [Career.budget] and adds the player to the managed squad (recomputing strength,
+ * so the next match reflects it); selling frees a squad place for cash. Buttons
+ * disable when unaffordable, the squad is full ([TransferLimits.MAX_SQUAD]), or it
+ * would fall below the floor ([TransferLimits.MIN_SQUAD]).
+ */
+@Composable
+private fun TransferMarket(data: GameData, career: Career, onSign: (Int) -> Unit, onSell: (Int) -> Unit) {
+    var buying by remember { mutableStateOf(true) }
+    var query by remember { mutableStateOf("") }
+    val managedIdx = remember(career) { career.managedSquadIndices(data) }
+    val squadSize = managedIdx.size
+
+    val rows = remember(buying, query, career) {
+        if (buying) {
+            val q = query.trim().lowercase()
+            data.playersIndexed.asSequence()
+                .filter { it.index !in managedIdx }
+                .filter { q.isEmpty() || it.value.name.lowercase().contains(q) }
+                .sortedByDescending { it.value.rating }
+                .take(150)
+                .toList()
+        } else {
+            data.playersIndexed.filter { it.index in managedIdx }.sortedByDescending { it.value.rating }
+        }
+    }
+
+    Column(Modifier.fillMaxSize().background(Bars)) {
+        Row(
+            Modifier.fillMaxWidth().background(Color(0xFF0B3D24)).padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Transfer market", color = Gold, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                Text("Budget ${money(career.budget)} · squad $squadSize", color = Ink, style = MaterialTheme.typography.labelMedium)
+            }
+            PillButton("Buy", enabled = !buying) { buying = true; query = "" }
+            Spacer(Modifier.width(6.dp))
+            PillButton("Sell", enabled = buying) { buying = false; query = "" }
+        }
+        if (buying) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                label = { Text("Search players (all leagues)", color = Sub) },
+            )
+        }
+        LazyColumn(Modifier.fillMaxSize()) {
+            itemsIndexed(rows, key = { _, iv -> iv.index }) { _, iv ->
+                val p = iv.value
+                if (buying) {
+                    val fee = Valuation.buyPriceK(p)
+                    val canBuy = career.budget >= fee && squadSize < TransferLimits.MAX_SQUAD
+                    val club = data.clubsById[career.currentClubOf(iv.index, p.club)]?.name
+                    TransferRow(p, club, money(fee), "Sign", canBuy) { onSign(iv.index) }
+                } else {
+                    val fee = Valuation.sellPriceK(p)
+                    val canSell = squadSize > TransferLimits.MIN_SQUAD
+                    TransferRow(p, null, money(fee), "Sell", canSell) { onSell(iv.index) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TransferRow(p: Player, club: String?, price: String, action: String, enabled: Boolean, onAction: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RatingChip(p.rating)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(p.name, color = Ink, style = MaterialTheme.typography.bodyMedium)
+                if (p.key) Text("  ★", color = Gold, style = MaterialTheme.typography.bodySmall)
+            }
+            Text(
+                "age ${p.age} · ${club ?: "free agent"} · $price",
+                color = Sub,
+                maxLines = 1,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        PillButton(action, enabled = enabled) { onAction() }
+    }
+}
+
 // ---- tactics: real FORM.DAT formation on a pitch ---------------------------
 
 @Composable
 private fun PitchLineup(data: GameData, career: Career) {
     val forms = data.formations
     var formIdx by remember { mutableStateOf(0) }
-    val squad = remember(career.managedClubId) { data.squad(career.managedClubId) }
+    val squad = remember(career) { career.managedSquad(data) }
     val form = forms.getOrNull(formIdx).orEmpty()
     val gkSlot = remember(form) { form.indices.maxByOrNull { form[it].getOrElse(1) { 0.0 } } ?: 0 }
     val depthOrder = remember(form) { form.indices.sortedByDescending { form[it].getOrElse(1) { 0.0 } } }
-    val lineup = remember(career.managedClubId, formIdx, forms) { assignLineup(squad, form) }
+    val lineup = remember(career, formIdx, forms) { assignLineup(squad, form) }
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().background(Color(0xFF0B3D24)).padding(horizontal = 12.dp, vertical = 6.dp),

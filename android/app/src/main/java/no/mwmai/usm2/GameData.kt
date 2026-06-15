@@ -12,6 +12,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import no.mwmai.usm2.engine.Career
 import no.mwmai.usm2.engine.CareerFactory
+import no.mwmai.usm2.engine.TransferLimits
+import no.mwmai.usm2.engine.Valuation
 import java.io.File
 
 /** Reads the staged JSON bundle out of the APK's assets directory. */
@@ -116,6 +118,33 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         val current = _career.value ?: return
         if (!current.seasonComplete) return
         val next = current.rolloverSeason()
+        _career.value = next
+        persist(next)
+    }
+
+    /** Signs a player into the managed club if affordable and the squad has room. */
+    fun signPlayer(playerIndex: Int) {
+        val data = readyData() ?: return
+        val c = _career.value ?: return
+        val p = data.players.getOrNull(playerIndex) ?: return
+        if (c.currentClubOf(playerIndex, p.club) == c.managedClubId) return
+        if (c.managedSquad(data).size >= TransferLimits.MAX_SQUAD) return
+        val fee = Valuation.buyPriceK(p)
+        if (c.budget < fee) return
+        val next = c.signPlayer(data, playerIndex, fee)
+        _career.value = next
+        persist(next)
+    }
+
+    /** Sells a player out of the managed club, keeping the squad above its floor. */
+    fun sellPlayer(playerIndex: Int) {
+        val data = readyData() ?: return
+        val c = _career.value ?: return
+        val p = data.players.getOrNull(playerIndex) ?: return
+        if (c.currentClubOf(playerIndex, p.club) != c.managedClubId) return
+        if (c.managedSquad(data).size <= TransferLimits.MIN_SQUAD) return
+        val fee = Valuation.sellPriceK(p)
+        val next = c.sellPlayer(data, playerIndex, fee)
         _career.value = next
         persist(next)
     }

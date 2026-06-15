@@ -11,6 +11,11 @@ object CareerFactory {
      * real pyramid tier (England 20-24, France 18-22, Germany 18). */
     const val MAX_DIVISION_SIZE = 30
 
+    /** Starting transfer budget = this fraction of the club's squad value (clubs
+     * never get to spend their whole worth), with a floor so minnows can still deal. */
+    private const val BUDGET_FRACTION = 0.30
+    private const val BUDGET_FLOOR_K = 250L
+
     /** Clubs that share [club]'s group and division, in a stable display order. */
     fun divisionOf(data: GameData, club: Club): List<Club> =
         data.clubs
@@ -55,6 +60,8 @@ object CareerFactory {
         val defence = squads.map { Strength.defence(it) }
         val leagueGap = attack.average() - defence.average()
         val fixtures = Schedule.season(clubIds.size, seed)
+        val squadValueK = data.squad(clubId).sumOf { Valuation.valueK(it) }
+        val budget = (squadValueK * BUDGET_FRACTION).toLong().coerceAtLeast(BUDGET_FLOOR_K)
         return Career(
             managedClubId = clubId,
             group = club.group,
@@ -70,6 +77,7 @@ object CareerFactory {
             clubStrengths = clubStrengths,
             pyramid = tiers,
             promotionSlots = promotionSlots,
+            budget = budget,
         )
     }
 }

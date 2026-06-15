@@ -1,6 +1,8 @@
 package no.mwmai.usm2.engine
 
 import kotlinx.serialization.Serializable
+import no.mwmai.usm2.GameData
+import no.mwmai.usm2.Player
 
 /**
  * One league fixture. [home]/[away] are indices into [Career.clubIds]. A fixture
@@ -80,6 +82,13 @@ data class Career(
     val pyramid: List<Tier> = emptyList(),
     /** Clubs exchanged between adjacent tiers at season end (top K up, bottom K down). */
     val promotionSlots: Int = 3,
+    // ---- transfers ----
+    /** Transfer kitty in £k. Empty on pre-transfer saves (0) -> nothing affordable
+     * until a new career is started; new careers are seeded by [CareerFactory]. */
+    val budget: Long = 0,
+    /** Every transfer made this career, oldest first. Folded (last per player wins)
+     * to give each player's current club; see [currentClubOf] / [squadFor]. */
+    val transfers: List<Transfer> = emptyList(),
 ) {
     val totalRounds: Int get() = (fixtures.maxOfOrNull { it.round } ?: -1) + 1
 
@@ -234,6 +243,91 @@ data class Career(
             homeId = clubIds[f.home], awayId = clubIds[f.away],
             homeGoals = r[0], awayGoals = r[1], seed = seed,
             homeIsManaged = f.home == managedIndex,
+        )
+    }
+
+    // ---- transfers -------------------------------------------------------------
+
+    /** Player index -> current club id (null = released), folded from [transfers]
+     * with the last move per player winning. */
+    private fun movedTo(): Map<Int, String?> = transfers.associate { it.playerIndex to it.toClub }
+
+    /** The club [playerIndex] is at now: his last transfer's destination if he has
+     * moved, otherwise his [default] (original) club. */
+    fun currentClubOf(playerIndex: Int, default: String?): String? {
+        val moved = movedTo()
+        return if (moved.containsKey(playerIndex)) moved[playerIndex] else default
+    }
+
+    /** [clubId]'s current squad after transfers: its original players who have not
+     * left, plus anyone transferred in, sorted by rating (best first). */
+    fun squadFor(data: GameData, clubId: String): List<Player> {
+        val moved = movedTo()
+        val stayed = data.playersIndexed
+            .filter { it.value.club == clubId && !moved.containsKey(it.index) }
+            .map { it.value }
+        val joined = moved.filterValues { it == clubId }.keys
+            .mapNotNull { data.players.getOrNull(it) }
+        return (stayed + joined).sortedByDescending { it.rating }
+    }
+
+    /** The managed club's current squad. */
+    fun managedSquad(data: GameData): List<Player> = squadFor(data, managedClubId)
+
+    /** Global indices of the managed club's current players (for "already mine" UI checks). */
+    fun managedSquadIndices(data: GameData): Set<Int> {
+        val moved = movedTo()
+        val stayed = data.playersIndexed
+            .filter { it.value.club == managedClubId && !moved.containsKey(it.index) }
+            .map { it.index }
+        val joined = moved.filterValues { it == managedClubId }.keys
+        return (stayed + joined).toSet()
+    }
+
+    /** Signs [playerIndex] into the managed club for [feeK], debiting the budget and
+     * recomputing both clubs' strengths. Caller checks affordability / squad cap. */
+    fun signPlayer(data: GameData, playerIndex: Int, feeK: Long): Career =
+        withMove(data, playerIndex, managedClubId, -feeK, feeK)
+
+    /** Releases [playerIndex] from the managed club for [feeK], crediting the budget
+     * and recomputing the managed strength. Caller checks the squad floor. */
+    fun sellPlayer(data: GameData, playerIndex: Int, feeK: Long): Career =
+        withMove(data, playerIndex, null, +feeK, feeK)
+
+    /** Records a move, adjusts the budget, and re-freezes the strengths of every
+     * club whose squad changed (the player's old club and his new one). */
+    private fun withMove(data: GameData, playerIndex: Int, toClub: String?, budgetDelta: Long, feeK: Long): Career {
+        val player = data.players.getOrNull(playerIndex) ?: return this
+        val from = currentClubOf(playerIndex, player.club)
+        if (from == toClub) return this // no-op move
+        var c = copy(
+            budget = (budget + budgetDelta).coerceAtLeast(0L),
+            transfers = transfers + Transfer(playerIndex, toClub, feeK),
+        )
+        for (cid in listOfNotNull(from, toClub).distinct()) c = c.recomputeStrength(data, cid)
+        return c
+    }
+
+    /** Re-freezes [clubId]'s strength triple from its CURRENT squad, writing both the
+     * pyramid map (for rollover sims) and, if it is in the active division, the live
+     * per-club arrays + [leagueGap] that the goals model reads. */
+    private fun recomputeStrength(data: GameData, clubId: String): Career {
+        val squad = squadFor(data, clubId)
+        val triple = ClubStrength(Strength.of(squad), Strength.attack(squad), Strength.defence(squad))
+        val cs = if (clubStrengths.containsKey(clubId)) clubStrengths + (clubId to triple) else clubStrengths
+        val ai = clubIds.indexOf(clubId)
+        if (ai < 0) return copy(clubStrengths = cs)
+        val str = strengths.toMutableList().also { it[ai] = triple.overall }
+        val splitReady = attackStrengths.size == clubIds.size && defenceStrengths.size == clubIds.size
+        if (!splitReady) return copy(strengths = str, clubStrengths = cs)
+        val att = attackStrengths.toMutableList().also { it[ai] = triple.attack }
+        val def = defenceStrengths.toMutableList().also { it[ai] = triple.defence }
+        return copy(
+            strengths = str,
+            attackStrengths = att,
+            defenceStrengths = def,
+            leagueGap = att.average() - def.average(),
+            clubStrengths = cs,
         )
     }
 
