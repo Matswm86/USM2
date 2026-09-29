@@ -114,11 +114,13 @@ cleaner than a ~6 px 1996 ball upscaled, and **keepers now dive via faked Kotlin
    This supersedes the earlier letterboxed TITLE-on-black hero. The premise that
    "only TOOLS.BIT turns MAINSCR into an office" was wrong — MAINSCR is just the
    main-menu desk backdrop; the office is MANASCR and was already done.
-3. **Sprite slicing is only needed for Phase 3** now: PITCH.SPR + GROUND.BIT for the
-   match view, and TOOLS.BIT pressed-states if/when an interactive toolbar is built
-   (needs the EXE blit dims). POINTER.SPR cursors are decoded but unused (touch app).
-4. Wire the remaining finished backgrounds (CHAIRSCR boardroom, BENCHSCR dugout,
-   BANKSCR, NEWS) as their Phase-3 screens get built — they render correctly today.
+3. ~~Sprite slicing for Phase 3~~: **DONE for the match view.** The PITCH.SPR player
+   block ships as `img/match/{h,a}_*.png` (idle + run cycle). GROUND.BIT is still
+   unused. TOOLS.BIT is not needed: the toolbar icons are cropped from the toolbar
+   baked into the `.PIC` screens (`img/tb/ic_NN.png`, see `Toolbar.kt`).
+   POINTER.SPR cursors are decoded but unused (touch app).
+4. ~~Wire the remaining finished backgrounds~~: **DONE.** `RoomHost` shows CHAIRSCR
+   (boardroom), BENCHSCR (dugout), BANKSCR (bank) and NEWS as their rooms.
 
 ## Tools
 - `tools/decode_pic.py` — PAK2 decompressor + PNG writer for the 640×480 `.PIC` screens.

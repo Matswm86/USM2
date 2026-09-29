@@ -52,11 +52,13 @@ Field offsets recovered by per-column profiling over 4260 English players:
 | 30–122, 134–143 | zero/0xFF in seed DB (in-game runtime state) |
 
 Counts: French 3379, German 4150, English 4288 players (~99% real names),
-emitted with `age`, `key_player`, `skills` (11-byte list). 🟡 Exact per-column
-attribute names (tackle / pass / shoot / head / pace / stamina / handle / …) are
-still TBD — derive from the player-screen display code in USM2E.EXE (the labels
-sit next to the bytes there). The flag-vs-skill correlation did NOT isolate GKs,
-so do not guess names from it.
+emitted with `age`, `key_player`, `skills` (11-byte list). 🟡 Attribute names are
+partly confirmed. The app uses the real USM2E.EXE labels (Passing / Defending /
+Attacking / Ball Skills / Fitness/Physical / Goalkeeping). Skill-block index 0 =
+Goalkeeping, 1 = Defending and 3 = Attacking are confirmed against the player data;
+Ball Skills, Passing and Fitness/Physical (mean of indices 4, 6 and 9) are the
+closest-fitting bytes, and index 10 is a flat hidden trait. See `Player` in
+`Model.kt`. The key-player flag did NOT isolate GKs, so do not guess names from it.
 
 ### Auxiliary resources — DECODED (`tools/decode_misc.py` → `decoded/*.json`)
 - GAME.TXT: u32 offset table (offset[0]=table size) + CP850 strings →
@@ -79,8 +81,8 @@ so do not guess names from it.
   the base shapes.
 
 ### Other data files — 🔴 to decode
-COACH.DAT (4680), ADVERT.DAT (6200), SECTOR.MAP / STADIUMS.MAP,
-GAME.TXT (108k, in-game text/commentary strings), MANAGERS.NAM.
+SECTOR.MAP / STADIUMS.MAP, MANAGERS.NAM. (COACH.DAT, ADVERT.DAT and GAME.TXT are
+decoded, see above.)
 Save set: USME0001.{SVE 1.3M, MCH, PHS, THS} = English career snapshot
 (real English names: Darren Royle, Michael Carmody…).
 
@@ -125,10 +127,10 @@ PIC inventory: TITLE, START, MAINSCR (office), MANASCR (manager), BANKSCR (bank)
 CHAIRSCR (chairman), BENCHSCR (dugout), NEWS, TV, MATCH{SCR,BAR,ICE,MUD,WET}
 (pitch states). All 14 decode → `decoded/pics/*.png`.
 
-**Open polish:** per-screen palette selection — decoder uses ALL.PAL set 0 for
-all; MAINSCR/BANKSCR look correct, but TITLE's globe has colour speckle that may
-mean some screens use a different one of the 8 palette sets (the game switches
-palettes at load). Refine by testing palette index 0–7 per screen.
+**Per-screen palette selection: resolved.** The game uses one of the 8 ALL.PAL
+sets per screen. `decode_pic.py` carries a `PER_SCREEN_PALETTE` map (TITLE = set 6,
+every other screen set 0); the weather pitches are staged separately. See
+[`ART_NOTES.md`](ART_NOTES.md).
 
 ## 🟡 Sprites / fonts / animations — decompression SOLVED, frame-slice deferred
 Most are **PAK2** (verified: bytes 4–7 = file size BE), so `decode_pic.py`'s
@@ -140,7 +142,8 @@ decompressor produces their raw blobs directly:
 These are multi-frame **sheets**; per-frame width/height live in the game's blit
 code, not the file (exactly as screens were a known 640×480). Decision: slice
 each sheet per-asset during Phase-2 UI work, validating each cut visually — not
-blind, up front.
+blind, up front. Since then POINTER.SPR and the PITCH.SPR player block (30×32
+frames) have been sliced; see [`ART_NOTES.md`](ART_NOTES.md).
 
 Different/raw format (header NOT `PAK2`): STADIUM.BIT (1.9M) & GISTAD.BIT start
 `00 00 01 e0` (=480) → likely raw/own header; fonts MANAGERS/NEWFONT/NEWFONT8/
@@ -149,6 +152,8 @@ TITLEFNT start `00 00 00 00`. Decode when needed.
 ALL.PAL — 6144 bytes = 8 × 256-colour palettes (6-bit ×4 → 8-bit RGB).
 ANIMS/*.SMK — Smacker video stubs (500 bytes each = placeholders in this build).
 
-## Audio (lower priority; modern engine can resynthesise)
+## Audio
 *.WAV (crowd/SFX: CHEER, ROAR, JEER, WHIS*, BOOLIT…), MUSIC/MUSIC1.WAV,
-*.DIG (Miles sound-driver descriptors, not audio).
+*.DIG (Miles sound-driver descriptors, not audio). Six samples (WHISHORT, WHISLONG,
+ROAR, CHEER, JEER, INICHEER) are transcoded to Ogg by `tools/stage_audio.py` and
+used by the match view; the music is not used.
