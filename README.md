@@ -5,6 +5,10 @@ football-management classic **Ultimate Soccer Manager 2**, re-laid for touch.
 It reuses the original game's real database (clubs, managers, players,
 stadiums) and screen artwork, decoded from the original files.
 
+![The match view: both sides in their real formation on the original pitch art, with the live scoreboard and goal ticker.](docs/screen-match.png)
+
+*The match view, drawn from the original game's pitch art and player sprites.*
+
 ## Download
 
 [![Build APK](https://github.com/Matswm86/USM2/actions/workflows/build-android.yml/badge.svg)](https://github.com/Matswm86/USM2/actions/workflows/build-android.yml)
@@ -14,10 +18,6 @@ stadiums) and screen artwork, decoded from the original files.
 Sideload it on Android 8.0+ (enable "install unknown apps"). It is debug-signed,
 so if you are updating over an older build with a different signature, uninstall
 the old copy first.
-
-![The match view: both sides in their real formation on the original pitch art, with the live scoreboard and goal ticker.](docs/screen-match.png)
-
-*The match view, drawn from the original game's pitch art and player sprites.*
 
 ## What works today
 
@@ -29,10 +29,9 @@ It is a playable manager, not just a database browser:
   zones.
 - **Watchable matches** on the original pitch art: both teams placed in their
   real formation, the ball and players flowing with play, a ticking clock,
-  scoreboard and goal ticker. The animated scoreline always matches the result
-  the engine records.
-- **Weather**: matches are played on dry, muddy, wet or frozen pitches
-  (deterministic per fixture, cosmetic only), and **goalkeepers dive**.
+  scoreboard and goal ticker, and diving goalkeepers. Pitches are dry, muddy,
+  wet or frozen (deterministic per fixture, cosmetic only). The animated
+  scoreline always matches the result the engine records.
 - **Crowd audio** from the original game's own sounds: welcome, kick-off
   whistle, a roar when you score, a groan when you concede, full-time whistle.
 - **Transfers & a living budget**: buy and sell from the office phone against a
@@ -44,6 +43,23 @@ It is a playable manager, not just a database browser:
   players, with per-player attributes decoded from the original game.
 - **Season rollover**: promotion, relegation and a fresh fixture list across a
   five-tier English pyramid.
+
+## How it works
+
+The app is written in Kotlin with Jetpack Compose and is self-contained: it
+asks for no permissions and needs no network. The original game's database and
+screen art were decoded by Python tools into a slim JSON dataset and PNG images
+that ship inside the APK. A pure-Kotlin engine builds each season's double
+round-robin fixture list and settles every result from the clubs' attack and
+defence strengths with a seeded Poisson goal model, so a saved career replays
+identically. The match view then animates toward the result the engine has
+already recorded. Your career is saved to a file in the app's private storage
+after each move, so it survives restarts.
+
+## Status
+
+Version 0.1.0 and playable end to end; not done yet: AI clubs trading players on
+their own, player ageing, injuries and suspensions, and wider playtest balancing.
 
 ## Roadmap
 
